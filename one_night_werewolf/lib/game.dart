@@ -3,27 +3,17 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:http/http.dart' as http;
 
-enum Role {
-  werewolf(
-    'Werewolf',
-    'Find the other Werewolf. If you are alone, view one center card.',
-  ),
-  seer('Seer', 'View another player’s card or two center cards.'),
-  robber('Robber', 'Swap with another player, then view your new card.'),
-  troublemaker(
-    'Troublemaker',
-    'Swap two other players’ cards without viewing them.',
-  ),
-  villager(
-    'Villager',
-    'You have no night action. Listen carefully and find the Werewolves.',
-  );
+import 'l10n.dart';
 
-  const Role(this.label, this.description);
-  final String label;
-  final String description;
+enum Role {
+  werewolf,
+  seer,
+  robber,
+  troublemaker,
+  villager;
 
   static Role fromJson(String value) =>
       Role.values.firstWhere((role) => role.name == value);
@@ -404,9 +394,11 @@ enum GamePhase {
 }
 
 class GameController extends ChangeNotifier {
-  GameController({GameApi? api}) : _api = api ?? GameApi();
+  GameController({GameApi? api, this.languageCode = 'en'})
+    : _api = api ?? GameApi();
 
   final GameApi _api;
+  String languageCode;
   final List<Player> players = [
     const Player(id: 'player-1', name: 'Player 1'),
     const Player(id: 'player-2', name: 'Player 2'),
@@ -447,6 +439,21 @@ class GameController extends ChangeNotifier {
   bool get isRoomHost =>
       roomSession != null && roomSession!.playerId == room?.hostPlayerId;
 
+  void setLanguage(String value) {
+    for (var index = 0; index < players.length; index++) {
+      final defaultNamePattern = RegExp(r'^(Player|玩家) \d+$');
+      if (defaultNamePattern.hasMatch(players[index].name)) {
+        players[index] = players[index].copyWith(
+          name: AppLocalizations(
+            Locale(value),
+          ).text('default_player', {'number': index + 1}),
+        );
+      }
+    }
+    languageCode = value;
+    notifyListeners();
+  }
+
   void choosePassAndPlay() {
     error = null;
     phase = GamePhase.setup;
@@ -479,7 +486,7 @@ class GameController extends ChangeNotifier {
     players.add(
       Player(
         id: 'player-${DateTime.now().microsecondsSinceEpoch}',
-        name: 'Player $_nextPlayerNumber',
+        name: _text('default_player', {'number': _nextPlayerNumber}),
       ),
     );
     _nextPlayerNumber++;
@@ -592,27 +599,28 @@ class GameController extends ChangeNotifier {
   Future<void> loneWolfViewCenter(int index) async {
     await _performAction(
       centerTargets: [index],
-      summary: 'Center card ${index + 1} is',
+      summary: _text('center_is', {'number': index + 1}),
     );
   }
 
   Future<void> completeWerewolfMeeting() async {
-    await _performAction(summary: 'You found your pack.');
+    await _performAction(summary: _text('found_pack'));
   }
 
   Future<void> seerViewPlayer(String playerId) async {
     final target = _findPlayer(playerId);
     await _performAction(
       playerTargets: [playerId],
-      summary: '${target.player.name} is',
+      summary: _text('player_is', {'name': target.player.name}),
     );
   }
 
   Future<void> seerViewCenter(List<int> indices) async {
     await _performAction(
       centerTargets: indices,
-      summary:
-          'Center cards ${indices.map((index) => index + 1).join(' & ')} are',
+      summary: _text('centers_are', {
+        'numbers': indices.map((index) => index + 1).join(' & '),
+      }),
     );
   }
 
@@ -620,7 +628,7 @@ class GameController extends ChangeNotifier {
     final target = _findPlayer(targetId);
     await _performAction(
       playerTargets: [targetId],
-      summary: 'You swapped with ${target.player.name}. Your new role is',
+      summary: _text('robbed_result', {'name': target.player.name}),
     );
   }
 
@@ -629,7 +637,10 @@ class GameController extends ChangeNotifier {
     final second = _findPlayer(secondId);
     await _performAction(
       playerTargets: [firstId, secondId],
-      summary: 'You swapped ${first.player.name} and ${second.player.name}.',
+      summary: _text('trouble_result', {
+        'first': first.player.name,
+        'second': second.player.name,
+      }),
     );
   }
 
@@ -718,6 +729,9 @@ class GameController extends ChangeNotifier {
 
   GamePlayer _findPlayer(String id) =>
       game!.players.firstWhere((player) => player.player.id == id);
+
+  String _text(String key, [Map<String, Object> values = const {}]) =>
+      AppLocalizations(Locale(languageCode)).text(key, values);
 
   Future<bool> _guard(Future<void> Function() operation) async {
     if (busy) return false;

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'game.dart';
+import 'l10n.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -9,14 +11,29 @@ Future<void> main() async {
   runApp(const WerewolfApp());
 }
 
-class WerewolfApp extends StatelessWidget {
+class WerewolfApp extends StatefulWidget {
   const WerewolfApp({super.key});
+
+  @override
+  State<WerewolfApp> createState() => _WerewolfAppState();
+}
+
+class _WerewolfAppState extends State<WerewolfApp> {
+  Locale locale = const Locale('en');
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'One Night',
+      onGenerateTitle: (context) => context.tr('app_title'),
+      locale: locale,
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [
+        AppLocalizationsDelegate(),
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
       theme: ThemeData(
         brightness: Brightness.dark,
         colorScheme: ColorScheme.fromSeed(
@@ -43,13 +60,23 @@ class WerewolfApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const GameShell(),
+      home: GameShell(
+        locale: locale,
+        onLocaleChanged: (nextLocale) => setState(() => locale = nextLocale),
+      ),
     );
   }
 }
 
 class GameShell extends StatefulWidget {
-  const GameShell({super.key});
+  const GameShell({
+    super.key,
+    required this.locale,
+    required this.onLocaleChanged,
+  });
+
+  final Locale locale;
+  final ValueChanged<Locale> onLocaleChanged;
 
   @override
   State<GameShell> createState() => _GameShellState();
@@ -61,7 +88,16 @@ class _GameShellState extends State<GameShell> {
   @override
   void initState() {
     super.initState();
-    controller = GameController()..addListener(_refresh);
+    controller = GameController(languageCode: widget.locale.languageCode)
+      ..addListener(_refresh);
+  }
+
+  @override
+  void didUpdateWidget(GameShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.locale.languageCode != widget.locale.languageCode) {
+      controller.setLanguage(widget.locale.languageCode);
+    }
   }
 
   void _refresh() => setState(() {});
@@ -83,16 +119,20 @@ class _GameShellState extends State<GameShell> {
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
               child: switch (controller.phase) {
-                GamePhase.home => HomeScreen(controller: controller),
+                GamePhase.home => HomeScreen(
+                  controller: controller,
+                  locale: widget.locale,
+                  onLocaleChanged: widget.onLocaleChanged,
+                ),
                 GamePhase.setup => SetupScreen(controller: controller),
                 GamePhase.roomEntry => RoomEntryScreen(controller: controller),
                 GamePhase.roomLobby => RoomLobbyScreen(controller: controller),
                 GamePhase.roleHandoff => PrivateHandoff(
                   key: ValueKey('role-${controller.activeIndex}'),
-                  eyebrow: 'ROLE REVEAL',
+                  eyebrow: context.tr('role_reveal'),
                   player: controller.activePlayer,
-                  message: 'Make sure only you can see the screen.',
-                  buttonLabel: 'I’m ready',
+                  message: context.tr('role_privacy'),
+                  buttonLabel: context.tr('ready'),
                   onContinue: controller.showRole,
                 ),
                 GamePhase.roleReveal => RoleRevealScreen(
@@ -100,10 +140,10 @@ class _GameShellState extends State<GameShell> {
                 ),
                 GamePhase.nightHandoff => PrivateHandoff(
                   key: ValueKey('night-${controller.activeIndex}'),
-                  eyebrow: 'NIGHT ACTION',
+                  eyebrow: context.tr('night_action'),
                   player: controller.activePlayer,
-                  message: 'Everyone else: close your eyes.',
-                  buttonLabel: 'Start my action',
+                  message: context.tr('close_eyes'),
+                  buttonLabel: context.tr('start_action'),
                   onContinue: controller.beginNightAction,
                 ),
                 GamePhase.nightAction => NightActionScreen(
@@ -115,10 +155,10 @@ class _GameShellState extends State<GameShell> {
                 ),
                 GamePhase.voteHandoff => PrivateHandoff(
                   key: ValueKey('vote-${controller.activeIndex}'),
-                  eyebrow: 'SECRET VOTE',
+                  eyebrow: context.tr('secret_vote'),
                   player: controller.activePlayer,
-                  message: 'Pass the phone without revealing your choice.',
-                  buttonLabel: 'Cast my vote',
+                  message: context.tr('pass_vote'),
+                  buttonLabel: context.tr('cast_vote'),
                   onContinue: controller.beginVote,
                 ),
                 GamePhase.voting => VotingScreen(controller: controller),
@@ -154,8 +194,15 @@ class _GameShellState extends State<GameShell> {
 }
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.controller});
+  const HomeScreen({
+    super.key,
+    required this.controller,
+    required this.locale,
+    required this.onLocaleChanged,
+  });
   final GameController controller;
+  final Locale locale;
+  final ValueChanged<Locale> onLocaleChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +210,21 @@ class HomeScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const SizedBox(height: 16),
+          Align(
+            alignment: Alignment.centerRight,
+            child: SegmentedButton<String>(
+              segments: [
+                ButtonSegment(value: 'en', label: Text(context.tr('english'))),
+                ButtonSegment(value: 'zh', label: Text(context.tr('chinese'))),
+              ],
+              selected: {locale.languageCode},
+              showSelectedIcon: false,
+              onSelectionChanged: (selection) {
+                onLocaleChanged(Locale(selection.first));
+              },
+            ),
+          ),
           const Spacer(),
           Icon(
             Icons.dark_mode_rounded,
@@ -171,7 +233,7 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'ONE NIGHT',
+            context.tr('brand'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
@@ -181,29 +243,27 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'How are you playing?',
+            context.tr('how_playing'),
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.displaySmall,
           ),
           const SizedBox(height: 36),
           _ModeCard(
             icon: Icons.phone_android_rounded,
-            title: 'Pass & play',
-            description:
-                'Use one phone. Reveal roles, take actions, and vote privately.',
+            title: context.tr('pass_play'),
+            description: context.tr('pass_play_description'),
             onTap: controller.choosePassAndPlay,
           ),
           const SizedBox(height: 12),
           _ModeCard(
             icon: Icons.groups_rounded,
-            title: 'Create or join a room',
-            description:
-                'Each player connects with a room code from their own device.',
+            title: context.tr('room_mode'),
+            description: context.tr('room_mode_description'),
             onTap: controller.chooseRoom,
           ),
           const Spacer(),
           Text(
-            'All games are stored securely through the game server.',
+            context.tr('server_storage'),
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withValues(alpha: .45)),
           ),
@@ -300,12 +360,12 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
           ),
           const SizedBox(height: 18),
           Text(
-            'Play from your own phones',
+            context.tr('play_phones'),
             style: Theme.of(context).textTheme.displaySmall,
           ),
           const SizedBox(height: 10),
           Text(
-            'Choose a display name, then create a room or enter an existing code.',
+            context.tr('room_instructions'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: .6),
               height: 1.4,
@@ -315,9 +375,9 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
           TextField(
             controller: nameController,
             textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Your name',
-              prefixIcon: Icon(Icons.person_rounded),
+            decoration: InputDecoration(
+              labelText: context.tr('your_name'),
+              prefixIcon: const Icon(Icons.person_rounded),
             ),
           ),
           const SizedBox(height: 14),
@@ -326,18 +386,18 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
               await widget.controller.createRoom(nameController.text);
             },
             icon: const Icon(Icons.add_circle_outline_rounded),
-            label: const Text('Create room'),
+            label: Text(context.tr('create_room')),
           ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
             child: Row(
               children: [
-                Expanded(child: Divider()),
+                const Expanded(child: Divider()),
                 Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('OR'),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(context.tr('or')),
                 ),
-                Expanded(child: Divider()),
+                const Expanded(child: Divider()),
               ],
             ),
           ),
@@ -345,10 +405,10 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
             controller: codeController,
             textCapitalization: TextCapitalization.characters,
             maxLength: 6,
-            decoration: const InputDecoration(
-              labelText: 'Room code',
+            decoration: InputDecoration(
+              labelText: context.tr('room_code'),
               counterText: '',
-              prefixIcon: Icon(Icons.key_rounded),
+              prefixIcon: const Icon(Icons.key_rounded),
             ),
           ),
           const SizedBox(height: 14),
@@ -360,7 +420,7 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
               );
             },
             icon: const Icon(Icons.login_rounded),
-            label: const Text('Join room'),
+            label: Text(context.tr('join_room')),
           ),
         ],
       ),
@@ -382,7 +442,7 @@ class RoomLobbyScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 18),
           Text(
-            started ? 'ROOM STARTED' : 'ROOM CODE',
+            started ? context.tr('room_started') : context.tr('room_code'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
@@ -401,8 +461,8 @@ class RoomLobbyScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             started
-                ? 'The server has dealt and persisted this game. Device-specific role screens can now build on this room session.'
-                : 'Share this code. The lobby refreshes automatically.',
+                ? context.tr('started_room_description')
+                : context.tr('share_room'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: .6),
@@ -411,7 +471,7 @@ class RoomLobbyScreen extends StatelessWidget {
           ),
           const SizedBox(height: 28),
           Text(
-            'PLAYERS · ${room.players.length}/8',
+            context.tr('players_count', {'count': room.players.length}),
             style: Theme.of(context).textTheme.labelLarge,
           ),
           const SizedBox(height: 10),
@@ -437,7 +497,7 @@ class RoomLobbyScreen extends StatelessWidget {
                           ),
                         ),
                         if (player.id == room.hostPlayerId)
-                          const Chip(label: Text('Host')),
+                          Chip(label: Text(context.tr('host'))),
                       ],
                     ),
                   ),
@@ -451,17 +511,14 @@ class RoomLobbyScreen extends StatelessWidget {
                       await controller.startRemoteRoom();
                     }
                   : null,
-              child: const Text('Start room'),
+              child: Text(context.tr('start_room')),
             ),
           if (!started && !controller.isRoomHost)
-            const Text(
-              'Waiting for the host to start…',
-              textAlign: TextAlign.center,
-            ),
+            Text(context.tr('waiting_host'), textAlign: TextAlign.center),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: controller.goHome,
-            child: const Text('Leave room'),
+            child: Text(context.tr('leave_room')),
           ),
           const SizedBox(height: 12),
         ],
@@ -490,7 +547,7 @@ class _SetupScreenState extends State<SetupScreen> {
         children: [
           const SizedBox(height: 20),
           Text(
-            'ONE NIGHT',
+            context.tr('brand'),
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: Theme.of(context).colorScheme.primary,
               letterSpacing: 3,
@@ -499,12 +556,12 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Who is at the table?',
+            context.tr('who_table'),
             style: Theme.of(context).textTheme.displaySmall,
           ),
           const SizedBox(height: 8),
           Text(
-            'Arrange players clockwise. Use the arrows to swap seats between games.',
+            context.tr('arrange_players'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: .65),
               height: 1.4,
@@ -535,8 +592,8 @@ class _SetupScreenState extends State<SetupScreen> {
                           key: ValueKey(player.id),
                           initialValue: player.name,
                           maxLength: 30,
-                          decoration: const InputDecoration(
-                            hintText: 'Player name',
+                          decoration: InputDecoration(
+                            hintText: context.tr('player_name'),
                             counterText: '',
                           ),
                           onChanged: (name) =>
@@ -544,14 +601,14 @@ class _SetupScreenState extends State<SetupScreen> {
                         ),
                       ),
                       IconButton(
-                        tooltip: 'Move seat up',
+                        tooltip: context.tr('move_up'),
                         onPressed: index == 0
                             ? null
                             : () => controller.movePlayer(index, index - 1),
                         icon: const Icon(Icons.arrow_upward_rounded),
                       ),
                       IconButton(
-                        tooltip: 'Move seat down',
+                        tooltip: context.tr('move_down'),
                         onPressed: index == controller.players.length - 1
                             ? null
                             : () => controller.movePlayer(index, index + 1),
@@ -559,7 +616,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       ),
                       if (controller.players.length > 3)
                         IconButton(
-                          tooltip: 'Remove player',
+                          tooltip: context.tr('remove_player'),
                           onPressed: () => controller.removePlayer(index),
                           icon: const Icon(Icons.close_rounded),
                         ),
@@ -584,7 +641,7 @@ class _SetupScreenState extends State<SetupScreen> {
                       ? null
                       : controller.addPlayer,
                   icon: const Icon(Icons.person_add_alt_1_rounded),
-                  label: const Text('Add player'),
+                  label: Text(context.tr('add_player')),
                 ),
               ),
               const SizedBox(width: 12),
@@ -592,17 +649,20 @@ class _SetupScreenState extends State<SetupScreen> {
                 child: FilledButton(
                   onPressed: () async {
                     if (!await controller.startGame() && mounted) {
-                      setState(() => error = 'Every seat needs a name.');
+                      setState(() => error = context.tr('every_seat_name'));
                     }
                   },
-                  child: const Text('Deal roles'),
+                  child: Text(context.tr('deal_roles')),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
-            '${controller.players.length} players · ${controller.players.length + 3} cards',
+            context.tr('players_cards', {
+              'players': controller.players.length,
+              'cards': controller.players.length + 3,
+            }),
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.white.withValues(alpha: .45)),
           ),
@@ -651,7 +711,7 @@ class PrivateHandoff extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                'Pass to ${player.name}',
+                context.tr('pass_to', {'name': player.name}),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.displaySmall,
               ),
@@ -700,7 +760,7 @@ class RoleRevealScreen extends StatelessWidget {
               await controller.hideRoleAndContinue();
             },
             icon: const Icon(Icons.visibility_off_rounded),
-            label: const Text('Hide role & pass'),
+            label: Text(context.tr('hide_role_pass')),
           ),
           const SizedBox(height: 12),
         ],
@@ -731,7 +791,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
         children: [
           const SizedBox(height: 18),
           Text(
-            '${actor.originalRole.label.toUpperCase()} · ${actor.player.name}',
+            '${context.tr(actor.originalRole.name).toUpperCase()} · ${actor.player.name}',
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w800,
@@ -740,12 +800,12 @@ class _NightActionScreenState extends State<NightActionScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            _nightTitle(actor.originalRole),
+            _nightTitle(context, actor.originalRole),
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 8),
           Text(
-            actor.originalRole.description,
+            context.tr('${actor.originalRole.name}_description'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: .6),
               height: 1.4,
@@ -763,7 +823,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
             onPressed: controller.actionCommitted
                 ? controller.finishNightTurn
                 : null,
-            child: const Text('Hide & continue'),
+            child: Text(context.tr('hide_continue')),
           ),
           const SizedBox(height: 12),
         ],
@@ -783,12 +843,12 @@ class _NightActionScreenState extends State<NightActionScreen> {
               InfoPanel(
                 icon: Icons.pets_rounded,
                 text: partners.map((partner) => partner.player.name).join(', '),
-                caption: 'Your fellow Werewolf',
+                caption: context.tr('fellow_werewolf'),
               ),
               const SizedBox(height: 18),
               FilledButton(
                 onPressed: controller.completeWerewolfMeeting,
-                child: const Text('I know my pack'),
+                child: Text(context.tr('know_pack')),
               ),
             ],
           );
@@ -796,7 +856,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('You are the lone Werewolf. View one center card.'),
+            Text(context.tr('lone_wolf')),
             const SizedBox(height: 14),
             CenterCards(
               selected: centerSelection,
@@ -814,7 +874,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
               onPressed: centerSelection.length == 1
                   ? () => controller.loneWolfViewCenter(centerSelection.first)
                   : null,
-              child: const Text('View card'),
+              child: Text(context.tr('view_card')),
             ),
           ],
         );
@@ -822,7 +882,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('View one player'),
+            Text(context.tr('view_player')),
             const SizedBox(height: 10),
             ...others.map(
               (player) => SelectionTile(
@@ -830,16 +890,16 @@ class _NightActionScreenState extends State<NightActionScreen> {
                 onTap: () => controller.seerViewPlayer(player.player.id),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(
                 children: [
-                  Expanded(child: Divider()),
+                  const Expanded(child: Divider()),
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('OR VIEW TWO CENTER CARDS'),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(context.tr('view_two_center')),
                   ),
-                  Expanded(child: Divider()),
+                  const Expanded(child: Divider()),
                 ],
               ),
             ),
@@ -859,7 +919,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
               onPressed: centerSelection.length == 2
                   ? () => controller.seerViewCenter(centerSelection.toList())
                   : null,
-              child: const Text('View center cards'),
+              child: Text(context.tr('view_center_cards')),
             ),
           ],
         );
@@ -868,7 +928,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
           children: [
             for (final player in others)
               SelectionTile(
-                label: 'Swap with ${player.player.name}',
+                label: context.tr('swap_with', {'name': player.player.name}),
                 onTap: () => controller.robberSwap(player.player.id),
               ),
           ],
@@ -899,7 +959,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
                       playerSelection.last,
                     )
                   : null,
-              child: const Text('Swap selected players'),
+              child: Text(context.tr('swap_selected')),
             ),
           ],
         );
@@ -908,12 +968,12 @@ class _NightActionScreenState extends State<NightActionScreen> {
     }
   }
 
-  static String _nightTitle(Role role) => switch (role) {
-    Role.werewolf => 'Open your eyes',
-    Role.seer => 'What do you want to see?',
-    Role.robber => 'Choose someone to rob',
-    Role.troublemaker => 'Choose two players',
-    Role.villager => 'Sleep through the night',
+  static String _nightTitle(BuildContext context, Role role) => switch (role) {
+    Role.werewolf => context.tr('open_eyes'),
+    Role.seer => context.tr('what_see'),
+    Role.robber => context.tr('choose_rob'),
+    Role.troublemaker => context.tr('choose_two'),
+    Role.villager => context.tr('sleep_night'),
   };
 }
 
@@ -929,7 +989,7 @@ class _ActionResult extends StatelessWidget {
         InfoPanel(
           icon: Icons.check_circle_rounded,
           text: controller.actionSummary,
-          caption: 'Action complete',
+          caption: context.tr('action_complete'),
         ),
         if (controller.seenRoles.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -955,7 +1015,7 @@ class DiscussionScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'EVERYONE, WAKE UP',
+            context.tr('wake_up'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
@@ -973,7 +1033,7 @@ class DiscussionScreen extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(
-            'Discuss what happened. Bluff, question, and decide who the Werewolves are.',
+            context.tr('discussion_instructions'),
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: .65),
@@ -987,8 +1047,8 @@ class DiscussionScreen extends StatelessWidget {
             },
             child: Text(
               controller.secondsRemaining == 0
-                  ? 'Start voting'
-                  : 'End discussion early',
+                  ? context.tr('start_voting')
+                  : context.tr('end_discussion'),
             ),
           ),
         ],
@@ -1010,12 +1070,14 @@ class VotingScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 28),
           Text(
-            'Who is a Werewolf?',
+            context.tr('who_werewolf'),
             style: Theme.of(context).textTheme.displaySmall,
           ),
           const SizedBox(height: 8),
           Text(
-            '${controller.activePlayer.name}, choose one player. You cannot vote for yourself.',
+            context.tr('vote_instructions', {
+              'name': controller.activePlayer.name,
+            }),
             style: TextStyle(
               color: Colors.white.withValues(alpha: .6),
               height: 1.4,
@@ -1053,7 +1115,9 @@ class ResultScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 22),
           Text(
-            result.villageWon ? 'THE VILLAGE WINS' : 'THE WEREWOLVES WIN',
+            result.villageWon
+                ? context.tr('village_wins')
+                : context.tr('werewolves_win'),
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w800,
@@ -1063,8 +1127,12 @@ class ResultScreen extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             result.eliminatedIds.isEmpty
-                ? 'Nobody was eliminated'
-                : '${result.eliminatedIds.map((id) => _nameFor(game, id)).join(' & ')} eliminated',
+                ? context.tr('nobody_eliminated')
+                : context.tr('eliminated', {
+                    'names': result.eliminatedIds
+                        .map((id) => _nameFor(game, id))
+                        .join(' & '),
+                  }),
             style: Theme.of(context).textTheme.headlineMedium,
           ),
           const SizedBox(height: 22),
@@ -1097,8 +1165,8 @@ class ResultScreen extends StatelessWidget {
                               ),
                               Text(
                                 player.originalRole == player.currentRole
-                                    ? player.currentRole.label
-                                    : '${player.originalRole.label} → ${player.currentRole.label}',
+                                    ? context.tr(player.currentRole.name)
+                                    : '${context.tr(player.originalRole.name)} → ${context.tr(player.currentRole.name)}',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: .6),
                                 ),
@@ -1106,13 +1174,17 @@ class ResultScreen extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Text('${result.tallies[player.player.id]} votes'),
+                        Text(
+                          context.tr('votes', {
+                            'count': result.tallies[player.player.id] ?? 0,
+                          }),
+                        ),
                       ],
                     ),
                   ),
                 const SizedBox(height: 8),
                 Text(
-                  'CENTER CARDS',
+                  context.tr('center_cards'),
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const SizedBox(height: 10),
@@ -1125,8 +1197,8 @@ class ResultScreen extends StatelessWidget {
                           child: MiniRoleCard(
                             label:
                                 game.originalCenter[index] == game.center[index]
-                                ? game.center[index].label
-                                : '${game.originalCenter[index].label}\n→ ${game.center[index].label}',
+                                ? context.tr(game.center[index].name)
+                                : '${context.tr(game.originalCenter[index].name)}\n→ ${context.tr(game.center[index].name)}',
                           ),
                         ),
                       ),
@@ -1137,12 +1209,12 @@ class ResultScreen extends StatelessWidget {
           ),
           FilledButton(
             onPressed: controller.playAgain,
-            child: const Text('Play again, same seats'),
+            child: Text(context.tr('play_again')),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: controller.returnToSetup,
-            child: const Text('Adjust players & seats'),
+            child: Text(context.tr('adjust_seats')),
           ),
           const SizedBox(height: 12),
         ],
@@ -1217,14 +1289,14 @@ class RoleCard extends StatelessWidget {
         ),
         SizedBox(height: compact ? 12 : 22),
         Text(
-          role.label,
+          context.tr(role.name),
           style: compact
               ? Theme.of(context).textTheme.headlineMedium
               : Theme.of(context).textTheme.displaySmall,
         ),
         const SizedBox(height: 10),
         Text(
-          role.description,
+          context.tr('${role.name}_description'),
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withValues(alpha: .65),
@@ -1311,7 +1383,7 @@ class CenterCards extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  'CENTER\n${index + 1}',
+                  context.tr('center_number', {'number': index + 1}),
                   textAlign: TextAlign.center,
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
