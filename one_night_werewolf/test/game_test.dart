@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart' show Locale;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:one_night_werewolf/game.dart';
+import 'package:one_night_werewolf/l10n.dart';
 
 void main() {
   test('start game sends seating positions to FastAPI', () async {
@@ -60,6 +62,15 @@ void main() {
 
     expect(response.game.revision, 5);
     expect(response.seenRoles, [Role.werewolf]);
+  });
+
+  test('parses and localizes Minion and Insomniac roles', () {
+    expect(Role.fromJson('minion'), Role.minion);
+    expect(Role.fromJson('insomniac'), Role.insomniac);
+
+    const chinese = AppLocalizations(Locale('zh'));
+    expect(chinese.text('minion'), '爪牙');
+    expect(chinese.text('insomniac'), '失眠者');
   });
 }
 

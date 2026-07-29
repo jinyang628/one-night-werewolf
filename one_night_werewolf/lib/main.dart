@@ -878,6 +878,25 @@ class _NightActionScreenState extends State<NightActionScreen> {
             ),
           ],
         );
+      case Role.minion:
+        final werewolves = controller.werewolfPartners(actor.player.id);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InfoPanel(
+              icon: Icons.visibility_rounded,
+              text: werewolves.isEmpty
+                  ? context.tr('no_werewolves_seen')
+                  : werewolves.map((player) => player.player.name).join(', '),
+              caption: context.tr('minion_saw'),
+            ),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: controller.completeMinionWatch,
+              child: Text(context.tr('remember_werewolves')),
+            ),
+          ],
+        );
       case Role.seer:
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -963,6 +982,18 @@ class _NightActionScreenState extends State<NightActionScreen> {
             ),
           ],
         );
+      case Role.insomniac:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(context.tr('insomniac_prompt')),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: controller.insomniacCheck,
+              child: Text(context.tr('check_my_card')),
+            ),
+          ],
+        );
       case Role.villager:
         return const SizedBox.shrink();
     }
@@ -970,9 +1001,11 @@ class _NightActionScreenState extends State<NightActionScreen> {
 
   static String _nightTitle(BuildContext context, Role role) => switch (role) {
     Role.werewolf => context.tr('open_eyes'),
+    Role.minion => context.tr('find_werewolves'),
     Role.seer => context.tr('what_see'),
     Role.robber => context.tr('choose_rob'),
     Role.troublemaker => context.tr('choose_two'),
+    Role.insomniac => context.tr('did_role_change'),
     Role.villager => context.tr('sleep_night'),
   };
 }
@@ -1115,9 +1148,11 @@ class ResultScreen extends StatelessWidget {
         children: [
           const SizedBox(height: 22),
           Text(
-            result.villageWon
-                ? context.tr('village_wins')
-                : context.tr('werewolves_win'),
+            switch (result.winningTeam) {
+              'village' => context.tr('village_wins'),
+              'minion' => context.tr('minion_wins'),
+              _ => context.tr('werewolves_win'),
+            },
             style: TextStyle(
               color: Theme.of(context).colorScheme.primary,
               fontWeight: FontWeight.w800,
@@ -1309,9 +1344,11 @@ class RoleCard extends StatelessWidget {
 
   static IconData _roleIcon(Role role) => switch (role) {
     Role.werewolf => Icons.pets_rounded,
+    Role.minion => Icons.visibility_off_rounded,
     Role.seer => Icons.visibility_rounded,
     Role.robber => Icons.swap_horiz_rounded,
     Role.troublemaker => Icons.shuffle_rounded,
+    Role.insomniac => Icons.bedtime_off_rounded,
     Role.villager => Icons.home_rounded,
   };
 }

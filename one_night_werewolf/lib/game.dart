@@ -10,9 +10,11 @@ import 'l10n.dart';
 
 enum Role {
   werewolf,
+  minion,
   seer,
   robber,
   troublemaker,
+  insomniac,
   villager;
 
   static Role fromJson(String value) =>
@@ -51,19 +53,20 @@ class GamePlayer {
 
 class GameResult {
   const GameResult({
-    required this.villageWon,
+    required this.winningTeam,
     required this.eliminatedIds,
     required this.werewolfIds,
     required this.tallies,
   });
 
-  final bool villageWon;
+  final String winningTeam;
+  bool get villageWon => winningTeam == 'village';
   final Set<String> eliminatedIds;
   final Set<String> werewolfIds;
   final Map<String, int> tallies;
 
   factory GameResult.fromJson(Map<String, dynamic> json) => GameResult(
-    villageWon: json['winning_team'] == 'village',
+    winningTeam: json['winning_team'] as String,
     eliminatedIds: Set<String>.from(json['eliminated_player_ids'] as List),
     werewolfIds: Set<String>.from(json['werewolf_player_ids'] as List),
     tallies: {
@@ -596,6 +599,10 @@ class GameController extends ChangeNotifier {
       )
       .toList();
 
+  Future<void> completeMinionWatch() async {
+    await _performAction(summary: _text('minion_result'));
+  }
+
   Future<void> loneWolfViewCenter(int index) async {
     await _performAction(
       centerTargets: [index],
@@ -642,6 +649,10 @@ class GameController extends ChangeNotifier {
         'second': second.player.name,
       }),
     );
+  }
+
+  Future<void> insomniacCheck() async {
+    await _performAction(summary: _text('insomniac_result'));
   }
 
   Future<void> _performAction({
@@ -782,10 +793,12 @@ class GameController extends ChangeNotifier {
 
   static int _nightOrder(Role role) => switch (role) {
     Role.werewolf => 0,
-    Role.seer => 1,
-    Role.robber => 2,
-    Role.troublemaker => 3,
-    Role.villager => 4,
+    Role.minion => 1,
+    Role.seer => 2,
+    Role.robber => 3,
+    Role.troublemaker => 4,
+    Role.insomniac => 5,
+    Role.villager => 6,
   };
 
   @override

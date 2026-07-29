@@ -3,6 +3,11 @@ import unittest
 from app.models.games import (
     AdvanceGameRequest,
     CreateRoomRequest,
+    GameMode,
+    GamePhase,
+    GamePlayer,
+    GameState,
+    GameStatus,
     JoinRoomRequest,
     NightActionRequest,
     PlayerInput,
@@ -60,6 +65,61 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(game.status, "in_progress")
         self.assertEqual(len(game.players), 3)
         self.assertEqual(len(game.center), 3)
+        all_roles = {player.original_role for player in game.players} | set(
+            game.original_center
+        )
+        self.assertIn(Role.minion, all_roles)
+        self.assertIn(Role.insomniac, all_roles)
+        self.assertIn(Role.troublemaker, all_roles)
+
+    def test_minion_wins_when_no_werewolf_is_present_and_someone_else_dies(self):
+        game = GameState(
+            id="game",
+            room_code="ABC234",
+            mode=GameMode.pass_and_play,
+            status=GameStatus.complete,
+            phase=GamePhase.complete,
+            players=[
+                GamePlayer(
+                    id="a",
+                    name="A",
+                    seat=1,
+                    original_role=Role.minion,
+                    current_role=Role.minion,
+                ),
+                GamePlayer(
+                    id="b",
+                    name="B",
+                    seat=2,
+                    original_role=Role.seer,
+                    current_role=Role.seer,
+                ),
+                GamePlayer(
+                    id="c",
+                    name="C",
+                    seat=3,
+                    original_role=Role.insomniac,
+                    current_role=Role.insomniac,
+                ),
+            ],
+            original_center=[
+                Role.werewolf,
+                Role.robber,
+                Role.troublemaker,
+            ],
+            center=[Role.werewolf, Role.robber, Role.troublemaker],
+            votes={"a": "b", "b": "c", "c": "b"},
+        )
+
+        result = self.service._resolve(game)
+
+        self.assertEqual(result.winning_team, "minion")
+        self.assertEqual(result.eliminated_player_ids, ["b"])
+        self.assertEqual(
+            self.service._insomniac_action(game, "c", [], []),
+            [Role.insomniac],
+        )
+        self.assertEqual(self.service._minion_action(game, [], []), [])
 
     async def test_robber_action_is_persisted(self):
         game = await self.service.start_game(StartGameRequest(players=self.players))

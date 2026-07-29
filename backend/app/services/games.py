@@ -98,6 +98,12 @@ class GameService:
             seen_roles = self._werewolf_action(
                 updated_game, actor.id, input.center_targets
             )
+        elif role is Role.minion:
+            seen_roles = self._minion_action(
+                updated_game,
+                input.player_targets,
+                input.center_targets,
+            )
         elif role is Role.seer:
             seen_roles = self._seer_action(
                 updated_game,
@@ -111,6 +117,13 @@ class GameService:
             )
         elif role is Role.troublemaker:
             self._troublemaker_action(updated_game, actor.id, input.player_targets)
+        elif role is Role.insomniac:
+            seen_roles = self._insomniac_action(
+                updated_game,
+                actor.id,
+                input.player_targets,
+                input.center_targets,
+            )
         elif input.player_targets or input.center_targets:
             raise GameActionError("The Villager does not take a night action")
 
@@ -381,14 +394,18 @@ class GameService:
 
     @staticmethod
     def _deck_for_player_count(player_count: int) -> list[Role]:
-        return [
+        deck = [
             Role.werewolf,
-            Role.werewolf,
+            Role.minion,
             Role.seer,
             Role.robber,
             Role.troublemaker,
-            *([Role.villager] * (player_count - 2)),
+            Role.insomniac,
         ]
+        if player_count >= 4:
+            deck.append(Role.werewolf)
+        deck.extend([Role.villager] * (player_count + 3 - len(deck)))
+        return deck
 
     @staticmethod
     def _player(game: GameState, player_id: str) -> GamePlayer:
@@ -435,6 +452,20 @@ class GameService:
             return [game.center[index] for index in indices]
         raise GameActionError("The Seer views one player or two center cards")
 
+    @staticmethod
+    def _minion_action(
+        game: GameState,
+        player_targets: list[str],
+        center_targets: list[int],
+    ) -> list[Role]:
+        if player_targets or center_targets:
+            raise GameActionError("The Minion does not choose a card")
+        return [
+            player.original_role
+            for player in game.players
+            if player.original_role is Role.werewolf
+        ]
+
     def _robber_action(
         self, game: GameState, actor_id: str, player_targets: list[str]
     ) -> list[Role]:
@@ -464,6 +495,17 @@ class GameService:
             first.current_role,
         )
 
+    def _insomniac_action(
+        self,
+        game: GameState,
+        actor_id: str,
+        player_targets: list[str],
+        center_targets: list[int],
+    ) -> list[Role]:
+        if player_targets or center_targets:
+            raise GameActionError("The Insomniac only views their own card")
+        return [self._player(game, actor_id).current_role]
+
     @staticmethod
     def _resolve(game: GameState) -> GameResult:
         counts = Counter(game.votes.values())
@@ -476,17 +518,26 @@ class GameService:
         werewolves = sorted(
             player.id for player in game.players if player.current_role is Role.werewolf
         )
-        village_wins = (
-            any(player_id in werewolves for player_id in eliminated)
-            if werewolves
-            else not eliminated
-        )
+        minions = {
+            player.id for player in game.players if player.current_role is Role.minion
+        }
+        if werewolves:
+            village_wins = any(player_id in werewolves for player_id in eliminated)
+            winning_team = "village" if village_wins else "werewolves"
+        elif minions:
+            village_wins = not eliminated or any(
+                player_id in minions for player_id in eliminated
+            )
+            winning_team = "village" if village_wins else "minion"
+        else:
+            village_wins = not eliminated
+            winning_team = "village" if village_wins else "werewolves"
         tallies = [
             VoteTally(player_id=player.id, votes=counts[player.id])
             for player in sorted(game.players, key=lambda item: item.seat)
         ]
         return GameResult(
-            winning_team="village" if village_wins else "werewolves",
+            winning_team=winning_team,
             eliminated_player_ids=eliminated,
             werewolf_player_ids=werewolves,
             tallies=tallies,

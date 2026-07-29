@@ -5,9 +5,11 @@ from pydantic import BaseModel, Field, model_validator
 
 class Role(StrEnum):
     werewolf = "werewolf"
+    minion = "minion"
     seer = "seer"
     robber = "robber"
     troublemaker = "troublemaker"
+    insomniac = "insomniac"
     villager = "villager"
 
 
