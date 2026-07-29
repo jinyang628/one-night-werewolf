@@ -1,9 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:one_night_werewolf/game.dart';
 import 'package:one_night_werewolf/l10n.dart';
 import 'package:one_night_werewolf/main.dart';
 
 void main() {
+  test('resets orientation only when a new night handoff begins', () {
+    expect(
+      GameShell.shouldResetNightOrientation(
+        GamePhase.nightAction,
+        GamePhase.nightHandoff,
+      ),
+      isTrue,
+    );
+    expect(
+      GameShell.shouldResetNightOrientation(
+        GamePhase.roleReveal,
+        GamePhase.nightHandoff,
+      ),
+      isTrue,
+    );
+    expect(
+      GameShell.shouldResetNightOrientation(
+        GamePhase.nightHandoff,
+        GamePhase.nightAction,
+      ),
+      isFalse,
+    );
+    expect(
+      GameShell.shouldResetNightOrientation(
+        GamePhase.nightHandoff,
+        GamePhase.nightHandoff,
+      ),
+      isFalse,
+    );
+  });
+
   testWidgets('shows game mode choices on the home page', (tester) async {
     await tester.pumpWidget(const WerewolfApp());
 
@@ -67,6 +99,34 @@ void main() {
     await tester.pump();
 
     expect(find.text('2'), findsOneWidget);
+  });
+
+  testWidgets('keeps private handoff readable in landscape', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(800, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: const [AppLocalizationsDelegate()],
+        home: Scaffold(
+          body: PrivateHandoff(
+            eyebrow: 'NIGHT ACTION',
+            player: const Player(id: 'p1', name: 'Alex'),
+            message:
+                'Everyone else closes their eyes.\n'
+                'Tap only when the phone faces you.',
+            buttonLabel: 'Start my action',
+            onContinue: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Pass to Alex'), findsOneWidget);
+    expect(find.text('Start my action'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }
 

@@ -78,6 +78,13 @@ class GameShell extends StatefulWidget {
   final Locale locale;
   final ValueChanged<Locale> onLocaleChanged;
 
+  static bool shouldResetNightOrientation(
+    GamePhase previousPhase,
+    GamePhase currentPhase,
+  ) =>
+      currentPhase == GamePhase.nightHandoff &&
+      previousPhase != GamePhase.nightHandoff;
+
   @override
   State<GameShell> createState() => _GameShellState();
 }
@@ -85,7 +92,7 @@ class GameShell extends StatefulWidget {
 class _GameShellState extends State<GameShell> {
   late final GameController controller;
   int nightQuarterTurns = 0;
-  bool wasNightPhase = false;
+  GamePhase previousPhase = GamePhase.home;
 
   @override
   void initState() {
@@ -103,12 +110,12 @@ class _GameShellState extends State<GameShell> {
   }
 
   void _refresh() {
-    final isNightPhase = _isNightPhase(controller.phase);
+    final currentPhase = controller.phase;
     setState(() {
-      if (isNightPhase && !wasNightPhase) {
+      if (GameShell.shouldResetNightOrientation(previousPhase, currentPhase)) {
         nightQuarterTurns = 0;
       }
-      wasNightPhase = isNightPhase;
+      previousPhase = currentPhase;
     });
   }
 
@@ -762,47 +769,86 @@ class PrivateHandoff extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenPadding(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(Icons.visibility_off_rounded, size: 52),
-              const SizedBox(height: 28),
-              Text(
-                eyebrow,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                context.tr('pass_to', {'name': player.name}),
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.displaySmall,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white.withValues(alpha: .65)),
-              ),
-              const SizedBox(height: 36),
-              FilledButton.icon(
-                onPressed: onContinue,
-                icon: const Icon(Icons.lock_open_rounded),
-                label: Text(buttonLabel),
-              ),
-            ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > constraints.maxHeight;
+        final content = _handoffContent(context, compact: isWide);
+        final action = FilledButton.icon(
+          onPressed: onContinue,
+          icon: const Icon(Icons.lock_open_rounded),
+          label: Text(buttonLabel, textAlign: TextAlign.center),
+        );
+
+        return ScreenPadding(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: isWide ? 860 : 420),
+              child: isWide
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: SingleChildScrollView(child: content),
+                        ),
+                        const SizedBox(width: 36),
+                        Expanded(
+                          flex: 2,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: 56),
+                            child: action,
+                          ),
+                        ),
+                      ],
+                    )
+                  : SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [content, const SizedBox(height: 36), action],
+                      ),
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _handoffContent(BuildContext context, {required bool compact}) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Icon(Icons.visibility_off_rounded, size: compact ? 38 : 52),
+        SizedBox(height: compact ? 12 : 28),
+        Text(
+          eyebrow,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2,
           ),
         ),
-      ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr('pass_to', {'name': player.name}),
+          textAlign: TextAlign.center,
+          style: compact
+              ? Theme.of(context).textTheme.headlineMedium
+              : Theme.of(context).textTheme.displaySmall,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: .65),
+            height: 1.3,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -857,49 +903,96 @@ class _NightActionScreenState extends State<NightActionScreen> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final actor = controller.activeGamePlayer;
-    return ScreenPadding(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 18),
-          Text(
-            '${context.tr(actor.originalRole.name).toUpperCase()} · ${actor.player.name}',
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.primary,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.4,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > constraints.maxHeight;
+        final guidance = _nightGuidance(context, actor, compact: isWide);
+        final action = Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                child: controller.actionCommitted
+                    ? _ActionResult(controller: controller)
+                    : _actionPicker(controller, actor),
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _nightTitle(context, actor.originalRole),
-            style: Theme.of(context).textTheme.headlineMedium,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            context.tr('${actor.originalRole.name}_description'),
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: .6),
-              height: 1.4,
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: controller.actionCommitted
+                  ? controller.finishNightTurn
+                  : null,
+              child: Text(context.tr('hide_continue')),
             ),
+          ],
+        );
+
+        return ScreenPadding(
+          child: isWide
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      flex: 4,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: guidance,
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    VerticalDivider(color: Colors.white.withValues(alpha: .12)),
+                    const SizedBox(width: 24),
+                    Expanded(flex: 6, child: action),
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 18),
+                    guidance,
+                    const SizedBox(height: 24),
+                    Expanded(child: action),
+                    const SizedBox(height: 12),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _nightGuidance(
+    BuildContext context,
+    GamePlayer actor, {
+    required bool compact,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '${context.tr(actor.originalRole.name).toUpperCase()} · ${actor.player.name}',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.4,
           ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: SingleChildScrollView(
-              child: controller.actionCommitted
-                  ? _ActionResult(controller: controller)
-                  : _actionPicker(controller, actor),
-            ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          _nightTitle(context, actor.originalRole),
+          style: compact
+              ? Theme.of(context).textTheme.titleLarge
+              : Theme.of(context).textTheme.headlineMedium,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          context.tr('${actor.originalRole.name}_description'),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: .6),
+            height: 1.4,
           ),
-          FilledButton(
-            onPressed: controller.actionCommitted
-                ? controller.finishNightTurn
-                : null,
-            child: Text(context.tr('hide_continue')),
-          ),
-          const SizedBox(height: 12),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
