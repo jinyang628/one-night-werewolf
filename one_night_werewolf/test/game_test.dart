@@ -25,9 +25,10 @@ void main() {
       Player(id: 'a', name: 'Alice'),
       Player(id: 'b', name: 'Bob'),
       Player(id: 'c', name: 'Casey'),
-    ]);
+    ], defaultRolesForPlayerCount(3));
 
     expect(requestBody['players'][1]['seat'], 2);
+    expect(requestBody['roles'], hasLength(6));
     expect(game.id, 'game-1');
     expect(game.players.first.originalRole, Role.robber);
   });

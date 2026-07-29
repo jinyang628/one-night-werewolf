@@ -78,6 +78,7 @@ class GameState(BaseModel):
 
 class StartGameRequest(BaseModel):
     players: list[PlayerInput] = Field(min_length=3, max_length=8)
+    roles: list[Role] = Field(min_length=6, max_length=11)
 
     @model_validator(mode="after")
     def validate_players(self):
@@ -87,6 +88,8 @@ class StartGameRequest(BaseModel):
             raise ValueError("Player ids must be unique")
         if sorted(seats) != list(range(1, len(self.players) + 1)):
             raise ValueError("Seats must be numbered consecutively from 1")
+        if len(self.roles) != len(self.players) + 3:
+            raise ValueError("Role count must equal player count plus 3 center cards")
         return self
 
 
@@ -131,6 +134,13 @@ class StartRoomRequest(BaseModel):
     expected_revision: int | None = Field(default=None, ge=0)
 
 
+class ConfigureRoomRolesRequest(BaseModel):
+    player_id: str
+    player_token: str
+    roles: list[Role] = Field(min_length=4, max_length=11)
+    expected_revision: int | None = Field(default=None, ge=0)
+
+
 class RoomPlayer(BaseModel):
     id: str
     name: str
@@ -144,6 +154,7 @@ class RoomState(BaseModel):
     revision: int
     players: list[RoomPlayer]
     host_player_id: str
+    selected_roles: list[Role]
 
 
 class RoomSession(BaseModel):

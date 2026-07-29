@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from app.models.games import (
     AdvanceGameRequest,
+    ConfigureRoomRolesRequest,
     CreateRoomRequest,
     GameMode,
     GamePhase,
@@ -49,6 +50,7 @@ class GameService:
     async def start_game(self, input: StartGameRequest) -> GameState:
         game = self._deal_game(
             players=input.players,
+            roles=input.roles,
             game_id=str(uuid4()),
             room_code=self._room_code(),
             mode=GameMode.pass_and_play,
@@ -181,6 +183,7 @@ class GameService:
             revision=0,
             players=[RoomPlayer(id=player_id, name=input.player_name.strip(), seat=1)],
             host_player_id=player_id,
+            selected_roles=self._default_roles(1),
         )
         row = await self.repository.create(
             self._room_payload(room, {player_id: player_token})
@@ -202,6 +205,8 @@ class GameService:
 
         player_id = str(uuid4())
         player_token = secrets.token_urlsafe(24)
+        previous_default = self._default_roles(len(room.players))
+        used_default = room.selected_roles == previous_default
         room.players.append(
             RoomPlayer(
                 id=player_id,
@@ -209,6 +214,10 @@ class GameService:
                 seat=len(room.players) + 1,
             )
         )
+        if used_default:
+            room.selected_roles = self._default_roles(len(room.players))
+        else:
+            room.selected_roles.append(Role.villager)
         tokens = dict(row.get("player_tokens") or {})
         tokens[player_id] = player_token
         saved_row = await self.repository.update(
@@ -232,21 +241,42 @@ class GameService:
             await self.repository.get_by_room_code(room_code.upper())
         )
 
+    async def configure_room_roles(
+        self,
+        room_code: str,
+        input: ConfigureRoomRolesRequest,
+    ) -> RoomState:
+        row = await self.repository.get_by_room_code(room_code.upper())
+        room = self._room_from_row(row)
+        self._check_revision_value(room.revision, input.expected_revision)
+        self._authorize_host(row, room, input.player_id, input.player_token)
+        if room.status is not GameStatus.waiting:
+            raise GameActionError("Roles cannot be changed after the game starts")
+        self._validate_role_count(input.roles, len(room.players))
+        room.selected_roles = list(input.roles)
+        saved_row = await self.repository.update(
+            room.id,
+            room.revision,
+            {
+                "state": room.model_dump(mode="json"),
+                "revision": room.revision + 1,
+                "updated_at": self._now(),
+            },
+        )
+        return self._room_from_row(saved_row)
+
     async def start_room(self, room_code: str, input: StartRoomRequest) -> GameState:
         row = await self.repository.get_by_room_code(room_code.upper())
         room = self._room_from_row(row)
         self._check_revision_value(room.revision, input.expected_revision)
-        tokens = row.get("player_tokens") or {}
-        if (
-            input.player_id != room.host_player_id
-            or tokens.get(input.player_id) != input.player_token
-        ):
-            raise RoomAuthorizationError("Only the room host can start the game")
+        self._authorize_host(row, room, input.player_id, input.player_token)
         if len(room.players) < 3:
             raise GameActionError("At least three players are required")
+        self._validate_role_count(room.selected_roles, len(room.players))
 
         game = self._deal_game(
             players=room.players,
+            roles=room.selected_roles,
             game_id=room.id,
             room_code=room.room_code,
             mode=GameMode.room,
@@ -280,13 +310,15 @@ class GameService:
     def _deal_game(
         self,
         players,
+        roles: list[Role],
         game_id: str,
         room_code: str,
         mode: GameMode,
         host_player_id: str | None,
     ) -> GameState:
         ordered_players = sorted(players, key=lambda player: player.seat)
-        deck = self._deck_for_player_count(len(ordered_players))
+        self._validate_role_count(roles, len(ordered_players))
+        deck = list(roles)
         random.SystemRandom().shuffle(deck)
         game_players = [
             GamePlayer(
@@ -363,7 +395,14 @@ class GameService:
                     for player in state["players"]
                 ],
                 "host_player_id": state["host_player_id"],
+                "selected_roles": state.get("selected_roles")
+                or [
+                    *(player["original_role"] for player in state["players"]),
+                    *state["original_center"],
+                ],
             }
+        elif "selected_roles" not in state:
+            state["selected_roles"] = GameService._default_roles(len(state["players"]))
         state.update(
             {
                 "id": row["id"],
@@ -393,7 +432,8 @@ class GameService:
         return datetime.now(UTC).isoformat()
 
     @staticmethod
-    def _deck_for_player_count(player_count: int) -> list[Role]:
+    def _default_roles(player_count: int) -> list[Role]:
+        target_count = player_count + 3
         deck = [
             Role.werewolf,
             Role.minion,
@@ -404,8 +444,27 @@ class GameService:
         ]
         if player_count >= 4:
             deck.append(Role.werewolf)
-        deck.extend([Role.villager] * (player_count + 3 - len(deck)))
-        return deck
+        if len(deck) < target_count:
+            deck.extend([Role.villager] * (target_count - len(deck)))
+        return deck[:target_count]
+
+    @staticmethod
+    def _validate_role_count(roles: list[Role], player_count: int) -> None:
+        if len(roles) != player_count + 3:
+            raise GameActionError(
+                "Role count must equal player count plus 3 center cards"
+            )
+
+    @staticmethod
+    def _authorize_host(
+        row: dict,
+        room: RoomState,
+        player_id: str,
+        player_token: str,
+    ) -> None:
+        tokens = row.get("player_tokens") or {}
+        if player_id != room.host_player_id or tokens.get(player_id) != player_token:
+            raise RoomAuthorizationError("Only the room host can configure this game")
 
     @staticmethod
     def _player(game: GameState, player_id: str) -> GamePlayer:

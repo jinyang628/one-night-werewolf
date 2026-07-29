@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.models.games import (
     AdvanceGameRequest,
+    ConfigureRoomRolesRequest,
     CreateRoomRequest,
     GameState,
     JoinRoomRequest,
@@ -94,6 +95,18 @@ class GamesController:
         @router.get("/rooms/{room_code}", response_model=RoomState)
         async def get_room(room_code: str) -> RoomState:
             return await self._handle(self.service.get_room(room_code=room_code))
+
+        @router.put("/rooms/{room_code}/roles", response_model=RoomState)
+        async def configure_room_roles(
+            room_code: str,
+            input: ConfigureRoomRolesRequest,
+        ) -> RoomState:
+            return await self._handle(
+                self.service.configure_room_roles(
+                    room_code=room_code,
+                    input=input,
+                )
+            )
 
         @router.post("/rooms/{room_code}/start", response_model=GameState)
         async def start_room(room_code: str, input: StartRoomRequest) -> GameState:

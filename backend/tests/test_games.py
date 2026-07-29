@@ -2,6 +2,7 @@ import unittest
 
 from app.models.games import (
     AdvanceGameRequest,
+    ConfigureRoomRolesRequest,
     CreateRoomRequest,
     GameMode,
     GamePhase,
@@ -16,7 +17,7 @@ from app.models.games import (
     VoteRequest,
 )
 from app.services.game_repository import GameConflictError, GameNotFoundError
-from app.services.games import GameService
+from app.services.games import GameService, RoomAuthorizationError
 
 
 class MemoryGameRepository:
@@ -57,9 +58,13 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
             PlayerInput(id="b", name="B", seat=2),
             PlayerInput(id="c", name="C", seat=3),
         ]
+        self.start_request = StartGameRequest(
+            players=self.players,
+            roles=self.service._default_roles(3),
+        )
 
     async def test_game_is_created_in_repository(self):
-        game = await self.service.start_game(StartGameRequest(players=self.players))
+        game = await self.service.start_game(self.start_request)
 
         self.assertIn(game.id, self.repository.rows)
         self.assertEqual(game.status, "in_progress")
@@ -122,7 +127,7 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service._minion_action(game, [], []), [])
 
     async def test_robber_action_is_persisted(self):
-        game = await self.service.start_game(StartGameRequest(players=self.players))
+        game = await self.service.start_game(self.start_request)
         stored_state = self.repository.rows[game.id]["state"]
         stored_state["players"][0]["original_role"] = Role.robber.value
         stored_state["players"][0]["current_role"] = Role.robber.value
@@ -155,7 +160,7 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(persisted.revision, game.revision + 1)
 
     async def test_final_vote_persists_result(self):
-        game = await self.service.start_game(StartGameRequest(players=self.players))
+        game = await self.service.start_game(self.start_request)
         for player in game.players:
             game = await self.service.acknowledge_role(
                 game.id,
@@ -202,6 +207,35 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored["player_tokens"][host.player_id], host.player_token)
         self.assertEqual(stored["player_tokens"][guest.player_id], guest.player_token)
         self.assertNotIn("player_tokens", room.model_dump())
+
+        configured_roles = [
+            Role.werewolf,
+            Role.minion,
+            Role.seer,
+            Role.robber,
+            Role.troublemaker,
+        ]
+        configured = await self.service.configure_room_roles(
+            room.room_code,
+            ConfigureRoomRolesRequest(
+                player_id=host.player_id,
+                player_token=host.player_token,
+                roles=configured_roles,
+                expected_revision=room.revision,
+            ),
+        )
+        self.assertEqual(configured.selected_roles, configured_roles)
+
+        with self.assertRaises(RoomAuthorizationError):
+            await self.service.configure_room_roles(
+                room.room_code,
+                ConfigureRoomRolesRequest(
+                    player_id=guest.player_id,
+                    player_token=guest.player_token,
+                    roles=configured_roles,
+                    expected_revision=configured.revision,
+                ),
+            )
 
 
 if __name__ == "__main__":

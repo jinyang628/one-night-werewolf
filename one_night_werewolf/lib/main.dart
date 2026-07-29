@@ -504,6 +504,30 @@ class RoomLobbyScreen extends StatelessWidget {
               ],
             ),
           ),
+          RoleCompositionSummary(roles: room.selectedRoles),
+          const SizedBox(height: 10),
+          if (!started && controller.isRoomHost)
+            OutlinedButton.icon(
+              onPressed: () async {
+                final roles = await showRoleCompositionDialog(
+                  context,
+                  initialRoles: room.selectedRoles,
+                  requiredCount: room.players.length + 3,
+                );
+                if (roles != null) {
+                  await controller.configureRemoteRoomRoles(roles);
+                }
+              },
+              icon: const Icon(Icons.style_rounded),
+              label: Text(context.tr('configure_roles')),
+            ),
+          if (!started && !controller.isRoomHost)
+            Text(
+              context.tr('host_controls_roles'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white.withValues(alpha: .55)),
+            ),
+          const SizedBox(height: 10),
           if (!started && controller.isRoomHost)
             FilledButton(
               onPressed: room.players.length >= 3
@@ -565,6 +589,25 @@ class _SetupScreenState extends State<SetupScreen> {
             style: TextStyle(
               color: Colors.white.withValues(alpha: .65),
               height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final roles = await showRoleCompositionDialog(
+                context,
+                initialRoles: controller.selectedRoles,
+                requiredCount: controller.players.length + 3,
+              );
+              if (roles != null) {
+                controller.setPassAndPlayRoles(roles);
+              }
+            },
+            icon: const Icon(Icons.style_rounded),
+            label: Text(
+              context.tr('configure_roles_count', {
+                'count': controller.selectedRoles.length,
+              }),
             ),
           ),
           const SizedBox(height: 24),
@@ -1261,6 +1304,161 @@ class ResultScreen extends StatelessWidget {
       game.players.firstWhere((player) => player.player.id == id).player.name;
 }
 
+Future<List<Role>?> showRoleCompositionDialog(
+  BuildContext context, {
+  required List<Role> initialRoles,
+  required int requiredCount,
+}) => showDialog<List<Role>>(
+  context: context,
+  builder: (context) => RoleCompositionDialog(
+    initialRoles: initialRoles,
+    requiredCount: requiredCount,
+  ),
+);
+
+class RoleCompositionDialog extends StatefulWidget {
+  const RoleCompositionDialog({
+    super.key,
+    required this.initialRoles,
+    required this.requiredCount,
+  });
+
+  final List<Role> initialRoles;
+  final int requiredCount;
+
+  @override
+  State<RoleCompositionDialog> createState() => _RoleCompositionDialogState();
+}
+
+class _RoleCompositionDialogState extends State<RoleCompositionDialog> {
+  late Map<Role, int> counts;
+
+  int get total => counts.values.fold(0, (sum, count) => sum + count);
+
+  @override
+  void initState() {
+    super.initState();
+    counts = {for (final role in Role.values) role: 0};
+    for (final role in widget.initialRoles) {
+      counts[role] = counts[role]! + 1;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(context.tr('choose_roles')),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              context.tr('role_count_instruction', {
+                'required': widget.requiredCount,
+                'selected': total,
+              }),
+            ),
+            const SizedBox(height: 14),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final role in Role.values)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(RoleCard.roleIcon(role)),
+                      title: Text(context.tr(role.name)),
+                      subtitle: Text(
+                        context.tr('${role.name}_description'),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: context.tr('remove_role'),
+                            onPressed: counts[role] == 0
+                                ? null
+                                : () => setState(
+                                    () => counts[role] = counts[role]! - 1,
+                                  ),
+                            icon: const Icon(Icons.remove_circle_outline),
+                          ),
+                          SizedBox(
+                            width: 24,
+                            child: Text(
+                              '${counts[role]}',
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: context.tr('add_role'),
+                            onPressed: total >= widget.requiredCount
+                                ? null
+                                : () => setState(
+                                    () => counts[role] = counts[role]! + 1,
+                                  ),
+                            icon: const Icon(Icons.add_circle_outline),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(context.tr('cancel')),
+        ),
+        FilledButton(
+          onPressed: total == widget.requiredCount
+              ? () {
+                  Navigator.pop(context, [
+                    for (final role in Role.values)
+                      ...List.filled(counts[role]!, role),
+                  ]);
+                }
+              : null,
+          child: Text(context.tr('save_roles')),
+        ),
+      ],
+    );
+  }
+}
+
+class RoleCompositionSummary extends StatelessWidget {
+  const RoleCompositionSummary({super.key, required this.roles});
+
+  final List<Role> roles;
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = {for (final role in Role.values) role: 0};
+    for (final role in roles) {
+      counts[role] = counts[role]! + 1;
+    }
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final role in Role.values)
+          if (counts[role]! > 0)
+            Chip(
+              avatar: Icon(RoleCard.roleIcon(role), size: 16),
+              label: Text('${context.tr(role.name)} ×${counts[role]}'),
+            ),
+      ],
+    );
+  }
+}
+
 class ScreenPadding extends StatelessWidget {
   const ScreenPadding({super.key, required this.child});
   final Widget child;
@@ -1318,7 +1516,7 @@ class RoleCard extends StatelessWidget {
     child: Column(
       children: [
         Icon(
-          _roleIcon(role),
+          roleIcon(role),
           size: compact ? 38 : 62,
           color: Theme.of(context).colorScheme.primary,
         ),
@@ -1342,7 +1540,7 @@ class RoleCard extends StatelessWidget {
     ),
   );
 
-  static IconData _roleIcon(Role role) => switch (role) {
+  static IconData roleIcon(Role role) => switch (role) {
     Role.werewolf => Icons.pets_rounded,
     Role.minion => Icons.visibility_off_rounded,
     Role.seer => Icons.visibility_rounded,

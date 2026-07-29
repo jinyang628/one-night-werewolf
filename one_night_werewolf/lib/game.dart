@@ -21,6 +21,20 @@ enum Role {
       Role.values.firstWhere((role) => role.name == value);
 }
 
+List<Role> defaultRolesForPlayerCount(int playerCount) {
+  final roles = [
+    Role.werewolf,
+    Role.minion,
+    Role.seer,
+    Role.robber,
+    Role.troublemaker,
+    Role.insomniac,
+  ];
+  if (playerCount >= 4) roles.add(Role.werewolf);
+  roles.addAll(List.filled(playerCount + 3 - roles.length, Role.villager));
+  return roles;
+}
+
 class Player {
   const Player({required this.id, required this.name});
 
@@ -166,6 +180,7 @@ class RoomState {
     required this.revision,
     required this.players,
     required this.hostPlayerId,
+    required this.selectedRoles,
   });
 
   final String id;
@@ -174,6 +189,7 @@ class RoomState {
   final int revision;
   final List<RoomPlayer> players;
   final String hostPlayerId;
+  final List<Role> selectedRoles;
 
   factory RoomState.fromJson(Map<String, dynamic> json) => RoomState(
     id: json['id'] as String,
@@ -185,6 +201,10 @@ class RoomState {
         RoomPlayer.fromJson(player as Map<String, dynamic>),
     ],
     hostPlayerId: json['host_player_id'] as String,
+    selectedRoles: [
+      for (final role in json['selected_roles'] as List)
+        Role.fromJson(role as String),
+    ],
   );
 }
 
@@ -222,7 +242,10 @@ class GameApi {
   final http.Client _client;
   final String baseUrl;
 
-  Future<GameSession> startPassAndPlay(List<Player> players) async {
+  Future<GameSession> startPassAndPlay(
+    List<Player> players,
+    List<Role> selectedRoles,
+  ) async {
     final json = await _request(
       'POST',
       '/games',
@@ -235,6 +258,7 @@ class GameApi {
               'seat': index + 1,
             },
         ],
+        'roles': selectedRoles.map((role) => role.name).toList(),
       },
     );
     return GameSession.fromJson(json);
@@ -321,6 +345,23 @@ class GameApi {
     await _request('GET', '/games/rooms/${roomCode.toUpperCase()}'),
   );
 
+  Future<RoomState> configureRoomRoles(
+    RoomSession session,
+    RoomState room,
+    List<Role> roles,
+  ) async => RoomState.fromJson(
+    await _request(
+      'PUT',
+      '/games/rooms/${room.roomCode}/roles',
+      body: {
+        'player_id': session.playerId,
+        'player_token': session.playerToken,
+        'roles': roles.map((role) => role.name).toList(),
+        'expected_revision': room.revision,
+      },
+    ),
+  );
+
   Future<void> startRoom(RoomSession session, int expectedRevision) async {
     await _request(
       'POST',
@@ -345,6 +386,11 @@ class GameApi {
       response = switch (method) {
         'GET' => await _client.get(uri, headers: headers),
         'POST' => await _client.post(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        ),
+        'PUT' => await _client.put(
           uri,
           headers: headers,
           body: jsonEncode(body),
@@ -407,6 +453,7 @@ class GameController extends ChangeNotifier {
     const Player(id: 'player-2', name: 'Player 2'),
     const Player(id: 'player-3', name: 'Player 3'),
   ];
+  final List<Role> selectedRoles = defaultRolesForPlayerCount(3);
 
   GamePhase phase = GamePhase.home;
   GameSession? game;
@@ -493,12 +540,14 @@ class GameController extends ChangeNotifier {
       ),
     );
     _nextPlayerNumber++;
+    _resizeSelectedRoles();
     notifyListeners();
   }
 
   void removePlayer(int index) {
     if (players.length <= 3) return;
     players.removeAt(index);
+    _resizeSelectedRoles();
     notifyListeners();
   }
 
@@ -517,6 +566,7 @@ class GameController extends ChangeNotifier {
         players
             .map((player) => player.copyWith(name: player.name.trim()))
             .toList(),
+        selectedRoles,
       );
       result = null;
       activeIndex = 0;
@@ -549,6 +599,22 @@ class GameController extends ChangeNotifier {
     await _guard(() async {
       await _api.startRoom(roomSession!, room!.revision);
       room = await _api.getRoom(roomSession!.room.roomCode);
+    });
+  }
+
+  void setPassAndPlayRoles(List<Role> roles) {
+    if (roles.length != players.length + 3) return;
+    selectedRoles
+      ..clear()
+      ..addAll(roles);
+    notifyListeners();
+  }
+
+  Future<bool> configureRemoteRoomRoles(List<Role> roles) async {
+    if (roomSession == null || room == null) return false;
+    if (roles.length != room!.players.length + 3) return false;
+    return _guard(() async {
+      room = await _api.configureRoomRoles(roomSession!, room!, roles);
     });
   }
 
@@ -740,6 +806,19 @@ class GameController extends ChangeNotifier {
 
   GamePlayer _findPlayer(String id) =>
       game!.players.firstWhere((player) => player.player.id == id);
+
+  void _resizeSelectedRoles() {
+    final required = players.length + 3;
+    while (selectedRoles.length < required) {
+      selectedRoles.add(Role.villager);
+    }
+    while (selectedRoles.length > required) {
+      final villagerIndex = selectedRoles.lastIndexOf(Role.villager);
+      selectedRoles.removeAt(
+        villagerIndex >= 0 ? villagerIndex : selectedRoles.length - 1,
+      );
+    }
+  }
 
   String _text(String key, [Map<String, Object> values = const {}]) =>
       AppLocalizations(Locale(languageCode)).text(key, values);
