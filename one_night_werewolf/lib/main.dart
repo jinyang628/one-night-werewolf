@@ -84,6 +84,8 @@ class GameShell extends StatefulWidget {
 
 class _GameShellState extends State<GameShell> {
   late final GameController controller;
+  int nightQuarterTurns = 0;
+  bool wasNightPhase = false;
 
   @override
   void initState() {
@@ -100,7 +102,18 @@ class _GameShellState extends State<GameShell> {
     }
   }
 
-  void _refresh() => setState(() {});
+  void _refresh() {
+    final isNightPhase = _isNightPhase(controller.phase);
+    setState(() {
+      if (isNightPhase && !wasNightPhase) {
+        nightQuarterTurns = 0;
+      }
+      wasNightPhase = isNightPhase;
+    });
+  }
+
+  static bool _isNightPhase(GamePhase phase) =>
+      phase == GamePhase.nightHandoff || phase == GamePhase.nightAction;
 
   @override
   void dispose() {
@@ -112,59 +125,75 @@ class _GameShellState extends State<GameShell> {
 
   @override
   Widget build(BuildContext context) {
+    final showOrientationControls = _isNightPhase(controller.phase);
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
-              child: switch (controller.phase) {
-                GamePhase.home => HomeScreen(
-                  controller: controller,
-                  locale: widget.locale,
-                  onLocaleChanged: widget.onLocaleChanged,
+            Positioned.fill(
+              child: RotatedBox(
+                quarterTurns: showOrientationControls ? nightQuarterTurns : 0,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  child: switch (controller.phase) {
+                    GamePhase.home => HomeScreen(
+                      controller: controller,
+                      locale: widget.locale,
+                      onLocaleChanged: widget.onLocaleChanged,
+                    ),
+                    GamePhase.setup => SetupScreen(controller: controller),
+                    GamePhase.roomEntry => RoomEntryScreen(
+                      controller: controller,
+                    ),
+                    GamePhase.roomLobby => RoomLobbyScreen(
+                      controller: controller,
+                    ),
+                    GamePhase.roleHandoff => PrivateHandoff(
+                      key: ValueKey('role-${controller.activeIndex}'),
+                      eyebrow: context.tr('role_reveal'),
+                      player: controller.activePlayer,
+                      message: context.tr('role_privacy'),
+                      buttonLabel: context.tr('ready'),
+                      onContinue: controller.showRole,
+                    ),
+                    GamePhase.roleReveal => RoleRevealScreen(
+                      controller: controller,
+                    ),
+                    GamePhase.nightHandoff => PrivateHandoff(
+                      key: ValueKey('night-${controller.activeIndex}'),
+                      eyebrow: context.tr('night_action'),
+                      player: controller.activePlayer,
+                      message:
+                          '${context.tr('close_eyes')}\n${context.tr('orientation_hint')}',
+                      buttonLabel: context.tr('start_action'),
+                      onContinue: controller.beginNightAction,
+                    ),
+                    GamePhase.nightAction => NightActionScreen(
+                      key: ValueKey('action-${controller.activeIndex}'),
+                      controller: controller,
+                    ),
+                    GamePhase.discussion => DiscussionScreen(
+                      controller: controller,
+                    ),
+                    GamePhase.voteHandoff => PrivateHandoff(
+                      key: ValueKey('vote-${controller.activeIndex}'),
+                      eyebrow: context.tr('secret_vote'),
+                      player: controller.activePlayer,
+                      message: context.tr('pass_vote'),
+                      buttonLabel: context.tr('cast_vote'),
+                      onContinue: controller.beginVote,
+                    ),
+                    GamePhase.voting => VotingScreen(controller: controller),
+                    GamePhase.result => ResultScreen(controller: controller),
+                  },
                 ),
-                GamePhase.setup => SetupScreen(controller: controller),
-                GamePhase.roomEntry => RoomEntryScreen(controller: controller),
-                GamePhase.roomLobby => RoomLobbyScreen(controller: controller),
-                GamePhase.roleHandoff => PrivateHandoff(
-                  key: ValueKey('role-${controller.activeIndex}'),
-                  eyebrow: context.tr('role_reveal'),
-                  player: controller.activePlayer,
-                  message: context.tr('role_privacy'),
-                  buttonLabel: context.tr('ready'),
-                  onContinue: controller.showRole,
-                ),
-                GamePhase.roleReveal => RoleRevealScreen(
-                  controller: controller,
-                ),
-                GamePhase.nightHandoff => PrivateHandoff(
-                  key: ValueKey('night-${controller.activeIndex}'),
-                  eyebrow: context.tr('night_action'),
-                  player: controller.activePlayer,
-                  message: context.tr('close_eyes'),
-                  buttonLabel: context.tr('start_action'),
-                  onContinue: controller.beginNightAction,
-                ),
-                GamePhase.nightAction => NightActionScreen(
-                  key: ValueKey('action-${controller.activeIndex}'),
-                  controller: controller,
-                ),
-                GamePhase.discussion => DiscussionScreen(
-                  controller: controller,
-                ),
-                GamePhase.voteHandoff => PrivateHandoff(
-                  key: ValueKey('vote-${controller.activeIndex}'),
-                  eyebrow: context.tr('secret_vote'),
-                  player: controller.activePlayer,
-                  message: context.tr('pass_vote'),
-                  buttonLabel: context.tr('cast_vote'),
-                  onContinue: controller.beginVote,
-                ),
-                GamePhase.voting => VotingScreen(controller: controller),
-                GamePhase.result => ResultScreen(controller: controller),
-              },
+              ),
             ),
+            if (showOrientationControls)
+              TableOrientationControls(
+                quarterTurns: nightQuarterTurns,
+                onChanged: (value) => setState(() => nightQuarterTurns = value),
+              ),
             if (controller.busy)
               const Positioned.fill(
                 child: ColoredBox(
@@ -1455,6 +1484,106 @@ class RoleCompositionSummary extends StatelessWidget {
               label: Text('${context.tr(role.name)} ×${counts[role]}'),
             ),
       ],
+    );
+  }
+}
+
+class TableOrientationControls extends StatelessWidget {
+  const TableOrientationControls({
+    super.key,
+    required this.quarterTurns,
+    required this.onChanged,
+  });
+
+  final int quarterTurns;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Align(
+            alignment: Alignment.topCenter,
+            child: _OrientationEdgeButton(
+              key: const Key('orientation-top'),
+              icon: Icons.keyboard_arrow_up_rounded,
+              tooltip: context.tr('face_top'),
+              selected: quarterTurns == 2,
+              onPressed: () => onChanged(2),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _OrientationEdgeButton(
+              key: const Key('orientation-right'),
+              icon: Icons.keyboard_arrow_right_rounded,
+              tooltip: context.tr('face_right'),
+              selected: quarterTurns == 3,
+              onPressed: () => onChanged(3),
+            ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: _OrientationEdgeButton(
+              key: const Key('orientation-bottom'),
+              icon: Icons.keyboard_arrow_down_rounded,
+              tooltip: context.tr('face_bottom'),
+              selected: quarterTurns == 0,
+              onPressed: () => onChanged(0),
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _OrientationEdgeButton(
+              key: const Key('orientation-left'),
+              icon: Icons.keyboard_arrow_left_rounded,
+              tooltip: context.tr('face_left'),
+              selected: quarterTurns == 1,
+              onPressed: () => onChanged(1),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OrientationEdgeButton extends StatelessWidget {
+  const _OrientationEdgeButton({
+    super.key,
+    required this.icon,
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: Material(
+        color: selected
+            ? colorScheme.primary
+            : colorScheme.surface.withValues(alpha: .82),
+        shape: const CircleBorder(),
+        elevation: selected ? 4 : 1,
+        child: IconButton(
+          tooltip: tooltip,
+          onPressed: onPressed,
+          visualDensity: VisualDensity.compact,
+          icon: Icon(
+            icon,
+            color: selected ? colorScheme.onPrimary : colorScheme.onSurface,
+          ),
+        ),
+      ),
     );
   }
 }

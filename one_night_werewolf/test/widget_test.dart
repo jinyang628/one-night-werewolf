@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:one_night_werewolf/l10n.dart';
 import 'package:one_night_werewolf/main.dart';
 
 void main() {
@@ -47,4 +48,54 @@ void main() {
     );
     expect(find.text('Insomniac'), findsOneWidget);
   });
+
+  testWidgets('changes table orientation with one edge tap', (tester) async {
+    await tester.pumpWidget(const _OrientationHarness());
+
+    expect(find.text('0'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('orientation-right')));
+    await tester.pump();
+
+    expect(find.text('3'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('orientation-bottom')));
+    await tester.pump();
+
+    expect(find.text('0'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('orientation-top')));
+    await tester.pump();
+
+    expect(find.text('2'), findsOneWidget);
+  });
+}
+
+class _OrientationHarness extends StatefulWidget {
+  const _OrientationHarness();
+
+  @override
+  State<_OrientationHarness> createState() => _OrientationHarnessState();
+}
+
+class _OrientationHarnessState extends State<_OrientationHarness> {
+  int quarterTurns = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      supportedLocales: AppLocalizations.supportedLocales,
+      localizationsDelegates: const [AppLocalizationsDelegate()],
+      home: Scaffold(
+        body: Stack(
+          children: [
+            Center(child: Text('$quarterTurns')),
+            TableOrientationControls(
+              quarterTurns: quarterTurns,
+              onChanged: (value) => setState(() => quarterTurns = value),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
