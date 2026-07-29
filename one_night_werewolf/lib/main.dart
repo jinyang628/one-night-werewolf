@@ -1,122 +1,1407 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
-  runApp(const MyApp());
+import 'game.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load();
+  runApp(const WerewolfApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class WerewolfApp extends StatelessWidget {
+  const WerewolfApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      debugShowCheckedModeBanner: false,
+      title: 'One Night',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFE8B15D),
+          brightness: Brightness.dark,
+          surface: const Color(0xFF151B1D),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF0C1113),
+        useMaterial3: true,
+        textTheme: const TextTheme(
+          displaySmall: TextStyle(
+            fontWeight: FontWeight.w800,
+            letterSpacing: -1.2,
+          ),
+          headlineMedium: TextStyle(fontWeight: FontWeight.w800),
+          titleLarge: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFF20282B),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const GameShell(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class GameShell extends StatefulWidget {
+  const GameShell({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<GameShell> createState() => _GameShellState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _GameShellState extends State<GameShell> {
+  late final GameController controller;
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
+  @override
+  void initState() {
+    super.initState();
+    controller = GameController()..addListener(_refresh);
+  }
+
+  void _refresh() => setState(() {});
+
+  @override
+  void dispose() {
+    controller
+      ..removeListener(_refresh)
+      ..dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+      body: SafeArea(
+        child: Stack(
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: switch (controller.phase) {
+                GamePhase.home => HomeScreen(controller: controller),
+                GamePhase.setup => SetupScreen(controller: controller),
+                GamePhase.roomEntry => RoomEntryScreen(controller: controller),
+                GamePhase.roomLobby => RoomLobbyScreen(controller: controller),
+                GamePhase.roleHandoff => PrivateHandoff(
+                  key: ValueKey('role-${controller.activeIndex}'),
+                  eyebrow: 'ROLE REVEAL',
+                  player: controller.activePlayer,
+                  message: 'Make sure only you can see the screen.',
+                  buttonLabel: 'I’m ready',
+                  onContinue: controller.showRole,
+                ),
+                GamePhase.roleReveal => RoleRevealScreen(
+                  controller: controller,
+                ),
+                GamePhase.nightHandoff => PrivateHandoff(
+                  key: ValueKey('night-${controller.activeIndex}'),
+                  eyebrow: 'NIGHT ACTION',
+                  player: controller.activePlayer,
+                  message: 'Everyone else: close your eyes.',
+                  buttonLabel: 'Start my action',
+                  onContinue: controller.beginNightAction,
+                ),
+                GamePhase.nightAction => NightActionScreen(
+                  key: ValueKey('action-${controller.activeIndex}'),
+                  controller: controller,
+                ),
+                GamePhase.discussion => DiscussionScreen(
+                  controller: controller,
+                ),
+                GamePhase.voteHandoff => PrivateHandoff(
+                  key: ValueKey('vote-${controller.activeIndex}'),
+                  eyebrow: 'SECRET VOTE',
+                  player: controller.activePlayer,
+                  message: 'Pass the phone without revealing your choice.',
+                  buttonLabel: 'Cast my vote',
+                  onContinue: controller.beginVote,
+                ),
+                GamePhase.voting => VotingScreen(controller: controller),
+                GamePhase.result => ResultScreen(controller: controller),
+              },
             ),
+            if (controller.busy)
+              const Positioned.fill(
+                child: ColoredBox(
+                  color: Color(0x66000000),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              ),
+            if (controller.error != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 12,
+                child: Material(
+                  color: Theme.of(context).colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Text(controller.error!),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(),
+          Icon(
+            Icons.dark_mode_rounded,
+            color: Theme.of(context).colorScheme.primary,
+            size: 72,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'ONE NIGHT',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'How are you playing?',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: 36),
+          _ModeCard(
+            icon: Icons.phone_android_rounded,
+            title: 'Pass & play',
+            description:
+                'Use one phone. Reveal roles, take actions, and vote privately.',
+            onTap: controller.choosePassAndPlay,
+          ),
+          const SizedBox(height: 12),
+          _ModeCard(
+            icon: Icons.groups_rounded,
+            title: 'Create or join a room',
+            description:
+                'Each player connects with a room code from their own device.',
+            onTap: controller.chooseRoom,
+          ),
+          const Spacer(),
+          Text(
+            'All games are stored securely through the game server.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withValues(alpha: .45)),
+          ),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
+}
+
+class _ModeCard extends StatelessWidget {
+  const _ModeCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(20),
+    child: Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF151B1D),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withValues(alpha: .08)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 36, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 18),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 5),
+                Text(
+                  description,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: .6),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
+        ],
+      ),
+    ),
+  );
+}
+
+class RoomEntryScreen extends StatefulWidget {
+  const RoomEntryScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  State<RoomEntryScreen> createState() => _RoomEntryScreenState();
+}
+
+class _RoomEntryScreenState extends State<RoomEntryScreen> {
+  final nameController = TextEditingController();
+  final codeController = TextEditingController();
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    codeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              onPressed: widget.controller.goHome,
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Text(
+            'Play from your own phones',
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Choose a display name, then create a room or enter an existing code.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .6),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 28),
+          TextField(
+            controller: nameController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Your name',
+              prefixIcon: Icon(Icons.person_rounded),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            onPressed: () async {
+              await widget.controller.createRoom(nameController.text);
+            },
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            label: const Text('Create room'),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 24),
+            child: Row(
+              children: [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('OR'),
+                ),
+                Expanded(child: Divider()),
+              ],
+            ),
+          ),
+          TextField(
+            controller: codeController,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 6,
+            decoration: const InputDecoration(
+              labelText: 'Room code',
+              counterText: '',
+              prefixIcon: Icon(Icons.key_rounded),
+            ),
+          ),
+          const SizedBox(height: 14),
+          OutlinedButton.icon(
+            onPressed: () async {
+              await widget.controller.joinRoom(
+                codeController.text,
+                nameController.text,
+              );
+            },
+            icon: const Icon(Icons.login_rounded),
+            label: const Text('Join room'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RoomLobbyScreen extends StatelessWidget {
+  const RoomLobbyScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final room = controller.room!;
+    final started = room.status != 'waiting';
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 18),
+          Text(
+            started ? 'ROOM STARTED' : 'ROOM CODE',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            room.roomCode,
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.displaySmall?.copyWith(letterSpacing: 8),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            started
+                ? 'The server has dealt and persisted this game. Device-specific role screens can now build on this room session.'
+                : 'Share this code. The lobby refreshes automatically.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .6),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'PLAYERS · ${room.players.length}/8',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final player in room.players)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF151B1D),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        SeatBadge(number: player.seat),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            player.name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        if (player.id == room.hostPlayerId)
+                          const Chip(label: Text('Host')),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (!started && controller.isRoomHost)
+            FilledButton(
+              onPressed: room.players.length >= 3
+                  ? () async {
+                      await controller.startRemoteRoom();
+                    }
+                  : null,
+              child: const Text('Start room'),
+            ),
+          if (!started && !controller.isRoomHost)
+            const Text(
+              'Waiting for the host to start…',
+              textAlign: TextAlign.center,
+            ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: controller.goHome,
+            child: const Text('Leave room'),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class SetupScreen extends StatefulWidget {
+  const SetupScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  State<SetupScreen> createState() => _SetupScreenState();
+}
+
+class _SetupScreenState extends State<SetupScreen> {
+  String? error;
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          Text(
+            'ONE NIGHT',
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              letterSpacing: 3,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Who is at the table?',
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Arrange players clockwise. Use the arrows to swap seats between games.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .65),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: ListView.separated(
+              itemCount: controller.players.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final player = controller.players[index];
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF151B1D),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .08),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      SeatBadge(number: index + 1),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          key: ValueKey(player.id),
+                          initialValue: player.name,
+                          maxLength: 30,
+                          decoration: const InputDecoration(
+                            hintText: 'Player name',
+                            counterText: '',
+                          ),
+                          onChanged: (name) =>
+                              controller.renamePlayer(index, name),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Move seat up',
+                        onPressed: index == 0
+                            ? null
+                            : () => controller.movePlayer(index, index - 1),
+                        icon: const Icon(Icons.arrow_upward_rounded),
+                      ),
+                      IconButton(
+                        tooltip: 'Move seat down',
+                        onPressed: index == controller.players.length - 1
+                            ? null
+                            : () => controller.movePlayer(index, index + 1),
+                        icon: const Icon(Icons.arrow_downward_rounded),
+                      ),
+                      if (controller.players.length > 3)
+                        IconButton(
+                          tooltip: 'Remove player',
+                          onPressed: () => controller.removePlayer(index),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          if (error != null) ...[
+            Text(
+              error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: controller.players.length >= 8
+                      ? null
+                      : controller.addPlayer,
+                  icon: const Icon(Icons.person_add_alt_1_rounded),
+                  label: const Text('Add player'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () async {
+                    if (!await controller.startGame() && mounted) {
+                      setState(() => error = 'Every seat needs a name.');
+                    }
+                  },
+                  child: const Text('Deal roles'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${controller.players.length} players · ${controller.players.length + 3} cards',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withValues(alpha: .45)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class PrivateHandoff extends StatelessWidget {
+  const PrivateHandoff({
+    super.key,
+    required this.eyebrow,
+    required this.player,
+    required this.message,
+    required this.buttonLabel,
+    required this.onContinue,
+  });
+
+  final String eyebrow;
+  final Player player;
+  final String message;
+  final String buttonLabel;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenPadding(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Icon(Icons.visibility_off_rounded, size: 52),
+              const SizedBox(height: 28),
+              Text(
+                eyebrow,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Pass to ${player.name}',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.displaySmall,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white.withValues(alpha: .65)),
+              ),
+              const SizedBox(height: 36),
+              FilledButton.icon(
+                onPressed: onContinue,
+                icon: const Icon(Icons.lock_open_rounded),
+                label: Text(buttonLabel),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class RoleRevealScreen extends StatelessWidget {
+  const RoleRevealScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final role = controller.activeGamePlayer.originalRole;
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(),
+          Text(
+            controller.activePlayer.name,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.white.withValues(alpha: .55)),
+          ),
+          const SizedBox(height: 14),
+          RoleCard(role: role),
+          const Spacer(),
+          FilledButton.icon(
+            onPressed: () async {
+              await controller.hideRoleAndContinue();
+            },
+            icon: const Icon(Icons.visibility_off_rounded),
+            label: const Text('Hide role & pass'),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class NightActionScreen extends StatefulWidget {
+  const NightActionScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  State<NightActionScreen> createState() => _NightActionScreenState();
+}
+
+class _NightActionScreenState extends State<NightActionScreen> {
+  final Set<int> centerSelection = {};
+  final Set<String> playerSelection = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final actor = controller.activeGamePlayer;
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 18),
+          Text(
+            '${actor.originalRole.label.toUpperCase()} · ${actor.player.name}',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _nightTitle(actor.originalRole),
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            actor.originalRole.description,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .6),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Expanded(
+            child: SingleChildScrollView(
+              child: controller.actionCommitted
+                  ? _ActionResult(controller: controller)
+                  : _actionPicker(controller, actor),
+            ),
+          ),
+          FilledButton(
+            onPressed: controller.actionCommitted
+                ? controller.finishNightTurn
+                : null,
+            child: const Text('Hide & continue'),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionPicker(GameController controller, GamePlayer actor) {
+    final others = controller.otherPlayers(actor.player.id);
+    switch (actor.originalRole) {
+      case Role.werewolf:
+        final partners = controller.werewolfPartners(actor.player.id);
+        if (partners.isNotEmpty) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              InfoPanel(
+                icon: Icons.pets_rounded,
+                text: partners.map((partner) => partner.player.name).join(', '),
+                caption: 'Your fellow Werewolf',
+              ),
+              const SizedBox(height: 18),
+              FilledButton(
+                onPressed: controller.completeWerewolfMeeting,
+                child: const Text('I know my pack'),
+              ),
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('You are the lone Werewolf. View one center card.'),
+            const SizedBox(height: 14),
+            CenterCards(
+              selected: centerSelection,
+              maxSelection: 1,
+              onChanged: (selection) {
+                setState(() {
+                  centerSelection
+                    ..clear()
+                    ..addAll(selection);
+                });
+              },
+            ),
+            const SizedBox(height: 18),
+            FilledButton(
+              onPressed: centerSelection.length == 1
+                  ? () => controller.loneWolfViewCenter(centerSelection.first)
+                  : null,
+              child: const Text('View card'),
+            ),
+          ],
+        );
+      case Role.seer:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('View one player'),
+            const SizedBox(height: 10),
+            ...others.map(
+              (player) => SelectionTile(
+                label: player.player.name,
+                onTap: () => controller.seerViewPlayer(player.player.id),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Row(
+                children: [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('OR VIEW TWO CENTER CARDS'),
+                  ),
+                  Expanded(child: Divider()),
+                ],
+              ),
+            ),
+            CenterCards(
+              selected: centerSelection,
+              maxSelection: 2,
+              onChanged: (selection) {
+                setState(() {
+                  centerSelection
+                    ..clear()
+                    ..addAll(selection);
+                });
+              },
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: centerSelection.length == 2
+                  ? () => controller.seerViewCenter(centerSelection.toList())
+                  : null,
+              child: const Text('View center cards'),
+            ),
+          ],
+        );
+      case Role.robber:
+        return Column(
+          children: [
+            for (final player in others)
+              SelectionTile(
+                label: 'Swap with ${player.player.name}',
+                onTap: () => controller.robberSwap(player.player.id),
+              ),
+          ],
+        );
+      case Role.troublemaker:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final player in others)
+              SelectionTile(
+                label: player.player.name,
+                selected: playerSelection.contains(player.player.id),
+                onTap: () {
+                  setState(() {
+                    if (playerSelection.contains(player.player.id)) {
+                      playerSelection.remove(player.player.id);
+                    } else if (playerSelection.length < 2) {
+                      playerSelection.add(player.player.id);
+                    }
+                  });
+                },
+              ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: playerSelection.length == 2
+                  ? () => controller.troublemakerSwap(
+                      playerSelection.first,
+                      playerSelection.last,
+                    )
+                  : null,
+              child: const Text('Swap selected players'),
+            ),
+          ],
+        );
+      case Role.villager:
+        return const SizedBox.shrink();
+    }
+  }
+
+  static String _nightTitle(Role role) => switch (role) {
+    Role.werewolf => 'Open your eyes',
+    Role.seer => 'What do you want to see?',
+    Role.robber => 'Choose someone to rob',
+    Role.troublemaker => 'Choose two players',
+    Role.villager => 'Sleep through the night',
+  };
+}
+
+class _ActionResult extends StatelessWidget {
+  const _ActionResult({required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InfoPanel(
+          icon: Icons.check_circle_rounded,
+          text: controller.actionSummary,
+          caption: 'Action complete',
+        ),
+        if (controller.seenRoles.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          for (final role in controller.seenRoles)
+            RoleCard(role: role, compact: true),
+        ],
+      ],
+    );
+  }
+}
+
+class DiscussionScreen extends StatelessWidget {
+  const DiscussionScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final minutes = controller.secondsRemaining ~/ 60;
+    final seconds = controller.secondsRemaining % 60;
+    return ScreenPadding(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'EVERYONE, WAKE UP',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 2,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            '$minutes:${seconds.toString().padLeft(2, '0')}',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.displaySmall?.copyWith(fontSize: 76),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Discuss what happened. Bluff, question, and decide who the Werewolves are.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .65),
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 40),
+          FilledButton(
+            onPressed: () async {
+              await controller.endDiscussion();
+            },
+            child: Text(
+              controller.secondsRemaining == 0
+                  ? 'Start voting'
+                  : 'End discussion early',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class VotingScreen extends StatelessWidget {
+  const VotingScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final others = controller.otherPlayers(controller.activePlayer.id);
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 28),
+          Text(
+            'Who is a Werewolf?',
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${controller.activePlayer.name}, choose one player. You cannot vote for yourself.',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: .6),
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 28),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final player in others)
+                  SelectionTile(
+                    label: player.player.name,
+                    onTap: () => controller.castVote(player.player.id),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ResultScreen extends StatelessWidget {
+  const ResultScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final result = controller.result!;
+    final game = controller.game!;
+    return ScreenPadding(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 22),
+          Text(
+            result.villageWon ? 'THE VILLAGE WINS' : 'THE WEREWOLVES WIN',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            result.eliminatedIds.isEmpty
+                ? 'Nobody was eliminated'
+                : '${result.eliminatedIds.map((id) => _nameFor(game, id)).join(' & ')} eliminated',
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
+          const SizedBox(height: 22),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final player in game.players)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: result.eliminatedIds.contains(player.player.id)
+                          ? const Color(0xFF3A2020)
+                          : const Color(0xFF151B1D),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        SeatBadge(number: game.players.indexOf(player) + 1),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                player.player.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                player.originalRole == player.currentRole
+                                    ? player.currentRole.label
+                                    : '${player.originalRole.label} → ${player.currentRole.label}',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: .6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text('${result.tallies[player.player.id]} votes'),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  'CENTER CARDS',
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    for (var index = 0; index < game.center.length; index++)
+                      Expanded(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: index == 2 ? 0 : 8),
+                          child: MiniRoleCard(
+                            label:
+                                game.originalCenter[index] == game.center[index]
+                                ? game.center[index].label
+                                : '${game.originalCenter[index].label}\n→ ${game.center[index].label}',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          FilledButton(
+            onPressed: controller.playAgain,
+            child: const Text('Play again, same seats'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: controller.returnToSetup,
+            child: const Text('Adjust players & seats'),
+          ),
+          const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  static String _nameFor(GameSession game, String id) =>
+      game.players.firstWhere((player) => player.player.id == id).player.name;
+}
+
+class ScreenPadding extends StatelessWidget {
+  const ScreenPadding({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: child,
+  );
+}
+
+class SeatBadge extends StatelessWidget {
+  const SeatBadge({super.key, required this.number});
+  final int number;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 42,
+    height: 42,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Theme.of(context).colorScheme.primary.withValues(alpha: .14),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: .4),
+      ),
+    ),
+    child: Text('$number', style: const TextStyle(fontWeight: FontWeight.w800)),
+  );
+}
+
+class RoleCard extends StatelessWidget {
+  const RoleCard({super.key, required this.role, this.compact = false});
+  final Role role;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: EdgeInsets.all(compact ? 20 : 28),
+    margin: const EdgeInsets.only(bottom: 10),
+    decoration: BoxDecoration(
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF2E3A3D), Color(0xFF151B1D)],
+      ),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: .35),
+      ),
+      boxShadow: const [
+        BoxShadow(color: Colors.black38, blurRadius: 24, offset: Offset(0, 12)),
+      ],
+    ),
+    child: Column(
+      children: [
+        Icon(
+          _roleIcon(role),
+          size: compact ? 38 : 62,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+        SizedBox(height: compact ? 12 : 22),
+        Text(
+          role.label,
+          style: compact
+              ? Theme.of(context).textTheme.headlineMedium
+              : Theme.of(context).textTheme.displaySmall,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          role.description,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: .65),
+            height: 1.45,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  static IconData _roleIcon(Role role) => switch (role) {
+    Role.werewolf => Icons.pets_rounded,
+    Role.seer => Icons.visibility_rounded,
+    Role.robber => Icons.swap_horiz_rounded,
+    Role.troublemaker => Icons.shuffle_rounded,
+    Role.villager => Icons.home_rounded,
+  };
+}
+
+class MiniRoleCard extends StatelessWidget {
+  const MiniRoleCard({super.key, required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    height: 88,
+    alignment: Alignment.center,
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: const Color(0xFF20282B),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: Text(
+      label,
+      textAlign: TextAlign.center,
+      style: const TextStyle(fontWeight: FontWeight.w700),
+    ),
+  );
+}
+
+class CenterCards extends StatelessWidget {
+  const CenterCards({
+    super.key,
+    required this.selected,
+    required this.maxSelection,
+    required this.onChanged,
+  });
+
+  final Set<int> selected;
+  final int maxSelection;
+  final ValueChanged<Set<int>> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      for (var index = 0; index < 3; index++)
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: index == 2 ? 0 : 8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                final next = Set<int>.of(selected);
+                if (!next.remove(index) && next.length < maxSelection) {
+                  next.add(index);
+                }
+                onChanged(next);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                height: 110,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected.contains(index)
+                      ? Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: .2)
+                      : const Color(0xFF20282B),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: selected.contains(index)
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.white.withValues(alpha: .1),
+                  ),
+                ),
+                child: Text(
+                  'CENTER\n${index + 1}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+}
+
+class SelectionTile extends StatelessWidget {
+  const SelectionTile({
+    super.key,
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: ListTile(
+      onTap: onTap,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: selected
+              ? Theme.of(context).colorScheme.primary
+              : Colors.white.withValues(alpha: .08),
+        ),
+      ),
+      tileColor: selected
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: .15)
+          : const Color(0xFF151B1D),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+      trailing: Icon(
+        selected ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+      ),
+    ),
+  );
+}
+
+class InfoPanel extends StatelessWidget {
+  const InfoPanel({
+    super.key,
+    required this.icon,
+    required this.text,
+    required this.caption,
+  });
+
+  final IconData icon;
+  final String text;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: const Color(0xFF20282B),
+      borderRadius: BorderRadius.circular(18),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: Theme.of(context).colorScheme.primary, size: 34),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                caption,
+                style: TextStyle(color: Colors.white.withValues(alpha: .5)),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                text,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
