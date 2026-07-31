@@ -1,0 +1,297 @@
+<view class="app-shell">
+  <view class="status-bar"></view>
+
+  <view class="topbar">
+    <view class="topbar__brand">{{copy.brand}}</view>
+    <button class="language-button" bindtap="toggleLocale">{{copy.language}}</button>
+  </view>
+
+  <!-- Home -->
+  <scroll-view wx:if="{{phase === 'home'}}" class="screen" scroll-y>
+    <view class="hero">
+      <view class="moon">☾</view>
+      <view class="eyebrow">{{copy.brand}}</view>
+      <view class="hero__title">{{copy.appTitle}}</view>
+      <view class="hero__subtitle">{{locale === 'zh' ? '天亮之前，一切皆有可能。' : 'Anything can happen before dawn.'}}</view>
+    </view>
+    <view class="mode-card" bindtap="choosePassPlay">
+      <view class="mode-card__icon">♟</view>
+      <view class="mode-card__copy">
+        <view class="card-title">{{copy.passPlay}}</view>
+        <view class="muted">{{copy.passPlayDesc}}</view>
+      </view>
+      <view class="chevron">›</view>
+    </view>
+    <view class="mode-card" bindtap="chooseRoom">
+      <view class="mode-card__icon">⌁</view>
+      <view class="mode-card__copy">
+        <view class="card-title">{{copy.roomMode}}</view>
+        <view class="muted">{{copy.roomModeDesc}}</view>
+      </view>
+      <view class="chevron">›</view>
+    </view>
+  </scroll-view>
+
+  <!-- Setup -->
+  <view wx:if="{{phase === 'setup'}}" class="screen screen--column">
+    <view class="screen-heading">
+      <button class="back-button" bindtap="goHome">‹ {{copy.back}}</button>
+      <view class="eyebrow">{{copy.brand}}</view>
+      <view class="page-title">{{copy.whoTable}}</view>
+      <view class="muted">{{copy.arrange}}</view>
+    </view>
+    <button class="button button--secondary" data-for="game" bindtap="openRoleEditor">
+      ◈ {{copy.configure}} · {{selectedRoles.length}}
+    </button>
+    <scroll-view class="grow-list" scroll-y>
+      <view
+        wx:for="{{players}}"
+        wx:key="id"
+        class="player-row"
+      >
+        <view class="seat">{{index + 1}}</view>
+        <input
+          class="player-input"
+          maxlength="30"
+          value="{{item.name}}"
+          data-index="{{index}}"
+          bindinput="updatePlayerName"
+        />
+        <button class="icon-button" data-index="{{index}}" data-delta="-1" bindtap="movePlayer" disabled="{{index === 0}}">↑</button>
+        <button class="icon-button" data-index="{{index}}" data-delta="1" bindtap="movePlayer" disabled="{{index === players.length - 1}}">↓</button>
+        <button wx:if="{{players.length > 3}}" class="icon-button icon-button--danger" data-index="{{index}}" bindtap="removePlayer">×</button>
+      </view>
+    </scroll-view>
+    <view class="role-chips">
+      <view wx:for="{{selectedRoleChips}}" wx:key="role" class="role-chip">{{item.icon}} {{item.name}} ×{{item.count}}</view>
+    </view>
+    <view class="button-row">
+      <button class="button button--secondary button-row__item" bindtap="addPlayer" disabled="{{players.length >= 8}}">＋ {{copy.addPlayer}}</button>
+      <button class="button button--primary button-row__item" bindtap="startGame">{{copy.deal}}</button>
+    </view>
+  </view>
+
+  <!-- Room entry -->
+  <scroll-view wx:if="{{phase === 'roomEntry'}}" class="screen" scroll-y>
+    <button class="back-button" bindtap="goHome">‹ {{copy.back}}</button>
+    <view class="page-title room-entry-title">{{copy.roomTitle}}</view>
+    <input class="field" maxlength="30" placeholder="{{copy.yourName}}" value="{{roomName}}" bindinput="updateRoomName" />
+    <button class="button button--primary" bindtap="createRoom" disabled="{{!roomName}}">＋ {{copy.createRoom}}</button>
+    <view class="divider"><view></view><text>OR</text><view></view></view>
+    <input class="field room-code-field" maxlength="6" placeholder="{{copy.roomCode}}" value="{{roomCodeInput}}" bindinput="updateRoomCode" />
+    <button class="button button--secondary" bindtap="joinRoom" disabled="{{!roomName || !roomCodeInput}}">{{copy.joinRoom}}</button>
+  </scroll-view>
+
+  <!-- Room lobby -->
+  <view wx:if="{{phase === 'roomLobby'}}" class="screen screen--column lobby">
+    <view class="eyebrow centered">{{room.status === 'waiting' ? copy.roomCode : copy.roomStarted}}</view>
+    <view class="room-code">{{room.room_code}}</view>
+    <view class="muted centered">{{room.status === 'waiting' ? copy.shareCode : copy.roomStarted}}</view>
+    <view class="section-label">{{roomPlayersText}}</view>
+    <scroll-view class="grow-list" scroll-y>
+      <view wx:for="{{roomPlayers}}" wx:key="id" class="player-row">
+        <view class="seat">{{item.seat}}</view>
+        <view class="player-name">{{item.name}}</view>
+        <view wx:if="{{item.isHost}}" class="host-badge">{{copy.host}}</view>
+      </view>
+    </scroll-view>
+    <view class="role-chips">
+      <view wx:for="{{selectedRoleChips}}" wx:key="role" class="role-chip">{{item.icon}} {{item.name}} ×{{item.count}}</view>
+    </view>
+    <button wx:if="{{room.status === 'waiting' &amp;&amp; isRoomHost}}" class="button button--secondary" data-for="room" bindtap="openRoleEditor">◈ {{copy.configure}}</button>
+    <button wx:if="{{room.status === 'waiting' &amp;&amp; isRoomHost}}" class="button button--primary" bindtap="startRoom" disabled="{{room.players.length &lt; 3}}">{{copy.startRoom}}</button>
+    <view wx:if="{{room.status === 'waiting' &amp;&amp; !isRoomHost}}" class="waiting">{{copy.waitingHost}}</view>
+    <button class="button button--ghost" bindtap="leaveRoom">{{copy.leaveRoom}}</button>
+  </view>
+
+  <!-- Private handoffs -->
+  <view wx:if="{{phase === 'roleHandoff' || phase === 'nightHandoff' || phase === 'voteHandoff'}}" class="screen handoff">
+    <view class="privacy-icon">◉</view>
+    <view class="eyebrow">
+      {{phase === 'roleHandoff' ? copy.yourRole : (phase === 'nightHandoff' ? copy.nightAction : copy.secretVote)}}
+    </view>
+    <view class="page-title centered">{{passToText}}</view>
+    <view class="muted centered">{{phase === 'nightHandoff' ? copy.closeEyes : copy.privacy}}</view>
+    <button wx:if="{{phase === 'roleHandoff'}}" class="button button--primary handoff__button" bindtap="showRole">{{copy.ready}}</button>
+    <button wx:if="{{phase === 'nightHandoff'}}" class="button button--primary handoff__button" bindtap="beginNightAction">{{copy.beginAction}}</button>
+    <button wx:if="{{phase === 'voteHandoff'}}" class="button button--primary handoff__button" bindtap="beginVote">{{copy.castVote}}</button>
+  </view>
+
+  <!-- Role reveal -->
+  <view wx:if="{{phase === 'roleReveal'}}" class="screen role-screen">
+    <view class="muted centered">{{activePlayer.name}}</view>
+    <view class="role-card">
+      <view class="role-card__emoji">
+        <block wx:for="{{roles}}" wx:key="id"><text wx:if="{{item.id === activeGamePlayer.original_role}}">{{item.icon}}</text></block>
+      </view>
+      <view class="page-title centered">{{activeRoleName}}</view>
+      <view class="muted centered">{{activeRoleDescription}}</view>
+    </view>
+    <button class="button button--primary" bindtap="hideRole">◉ {{copy.hidePass}}</button>
+  </view>
+
+  <!-- Night action -->
+  <view wx:if="{{phase === 'nightAction'}}" class="screen screen--column night-screen">
+    <view class="eyebrow">{{activeRoleName}} · {{activePlayer.name}}</view>
+    <view class="page-title">{{copy.nightAction}}</view>
+    <view class="muted">{{activeRoleDescription}}</view>
+    <scroll-view class="grow-list action-area" scroll-y>
+      <view wx:if="{{actionCommitted}}" class="action-result">
+        <view class="action-result__check">✓</view>
+        <view class="card-title">{{actionSummary}}</view>
+        <view class="seen-cards">
+          <view wx:for="{{seenRoleCards}}" wx:key="index" class="seen-card">
+            <view class="seen-card__icon">{{item.icon}}</view>
+            <view>{{item.name}}</view>
+          </view>
+        </view>
+      </view>
+
+      <block wx:else>
+        <block wx:if="{{activeGamePlayer.original_role === 'werewolf'}}">
+          <view wx:if="{{werewolfPartners.length}}" class="info-panel">
+            <view class="muted">{{copy.fellowWolf}}</view>
+            <view wx:for="{{werewolfPartners}}" wx:key="id" class="card-title">🐺 {{item.name}}</view>
+            <button class="button button--primary" bindtap="commitSimpleAction">{{copy.knowPack}}</button>
+          </view>
+          <block wx:else>
+            <view class="instruction">{{copy.loneWolf}}</view>
+            <view class="center-picker">
+              <view wx:for="{{centerCards}}" wx:key="index" class="center-card {{item.selected ? 'center-card--selected' : ''}}" data-index="{{item.index}}" bindtap="toggleCenter">中央<br/>{{item.index + 1}}</view>
+            </view>
+            <button class="button button--primary" bindtap="commitCenterAction" disabled="{{selectedCenters.length !== 1}}">{{copy.viewCard}}</button>
+          </block>
+        </block>
+
+        <block wx:if="{{activeGamePlayer.original_role === 'minion'}}">
+          <view class="info-panel">
+            <view class="muted">{{copy.fellowWolf}}</view>
+            <view wx:if="{{!werewolfPartners.length}}" class="card-title">{{copy.noWolves}}</view>
+            <view wx:for="{{werewolfPartners}}" wx:key="id" class="card-title">🐺 {{item.name}}</view>
+          </view>
+          <button class="button button--primary" bindtap="commitSimpleAction">{{copy.rememberWolves}}</button>
+        </block>
+
+        <block wx:if="{{activeGamePlayer.original_role === 'seer'}}">
+          <view class="section-label">{{copy.viewPlayer}}</view>
+          <view wx:for="{{otherPlayers}}" wx:key="id" class="selection-row" data-id="{{item.id}}" bindtap="commitPlayerAction">
+            <text>{{item.name}}</text><text>›</text>
+          </view>
+          <view class="section-label">{{copy.viewCenters}}</view>
+          <view class="center-picker">
+            <view wx:for="{{centerCards}}" wx:key="index" class="center-card {{item.selected ? 'center-card--selected' : ''}}" data-index="{{item.index}}" bindtap="toggleCenter">中央<br/>{{item.index + 1}}</view>
+          </view>
+          <button class="button button--primary" bindtap="commitCenterAction" disabled="{{selectedCenters.length !== 2}}">{{copy.viewCenters}}</button>
+        </block>
+
+        <block wx:if="{{activeGamePlayer.original_role === 'robber'}}">
+          <view class="section-label">{{copy.choose}}</view>
+          <view wx:for="{{otherPlayers}}" wx:key="id" class="selection-row {{voteTarget === item.id ? 'selection-row--selected' : ''}}" data-id="{{item.id}}" bindtap="togglePlayer">
+            <text>{{item.name}}</text><text>{{voteTarget === item.id ? '✓' : '›'}}</text>
+          </view>
+          <button class="button button--primary" bindtap="commitPlayerAction" disabled="{{selectedPlayers.length !== 1}}">{{copy.swap}}</button>
+        </block>
+
+        <block wx:if="{{activeGamePlayer.original_role === 'troublemaker'}}">
+          <view class="section-label">{{copy.choose}} 2</view>
+          <view wx:for="{{otherPlayers}}" wx:key="id" class="selection-row {{item.selected ? 'selection-row--selected' : ''}}" data-id="{{item.id}}" bindtap="togglePlayer">
+            <text>{{item.name}}</text><text>{{item.selected ? '✓' : '○'}}</text>
+          </view>
+          <button class="button button--primary" bindtap="commitPlayerAction" disabled="{{selectedPlayers.length !== 2}}">{{copy.swap}}</button>
+        </block>
+
+        <block wx:if="{{activeGamePlayer.original_role === 'insomniac'}}">
+          <view class="info-panel centered">{{activeRoleDescription}}</view>
+          <button class="button button--primary" bindtap="commitSimpleAction">{{copy.checkCard}}</button>
+        </block>
+      </block>
+    </scroll-view>
+    <button class="button button--primary" bindtap="finishNightTurn" disabled="{{!actionCommitted}}">{{copy.hideContinue}}</button>
+  </view>
+
+  <!-- Discussion -->
+  <view wx:if="{{phase === 'discussion'}}" class="screen discussion-screen">
+    <view class="sun">☀</view>
+    <view class="eyebrow">{{copy.discussion}}</view>
+    <view class="timer">{{timerText}}</view>
+    <view class="muted centered">{{copy.discuss}}</view>
+    <view class="discussion-players">
+      <view wx:for="{{game.players}}" wx:key="id" class="discussion-player">
+        <view class="seat">{{item.seat}}</view><text>{{item.name}}</text>
+      </view>
+    </view>
+    <button class="button button--primary" bindtap="endDiscussion">{{copy.endDiscussion}}</button>
+  </view>
+
+  <!-- Voting -->
+  <view wx:if="{{phase === 'voting'}}" class="screen screen--column">
+    <view class="eyebrow">{{copy.secretVote}}</view>
+    <view class="page-title">{{votePrompt}}</view>
+    <scroll-view class="grow-list" scroll-y>
+      <view
+        wx:for="{{otherPlayers}}"
+        wx:key="id"
+        class="selection-row {{voteTarget === item.id ? 'selection-row--selected' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="selectVote"
+      >
+        <view class="seat">{{item.seat}}</view>
+        <text class="player-name">{{item.name}}</text>
+        <text>{{voteTarget === item.id ? '✓' : '›'}}</text>
+      </view>
+    </scroll-view>
+    <button class="button button--primary" bindtap="castVote" disabled="{{!voteTarget}}">{{copy.castVote}}</button>
+  </view>
+
+  <!-- Result -->
+  <scroll-view wx:if="{{phase === 'result'}}" class="screen result-screen" scroll-y>
+    <view class="trophy">✦</view>
+    <view class="page-title centered">{{resultTitle}}</view>
+    <view class="result-subtitle">{{resultSubtitle}}</view>
+    <view class="section-label">{{copy.player}}</view>
+    <view wx:for="{{resultRows}}" wx:key="id" class="result-row {{item.eliminated ? 'result-row--eliminated' : ''}}">
+      <view>
+        <view class="card-title">{{item.name}}</view>
+        <view class="muted">{{item.originalName}}<text wx:if="{{item.roleChanged}}"> → {{item.currentName}}</text></view>
+      </view>
+      <view class="vote-count">{{item.votes}} {{locale === 'zh' ? '票' : 'votes'}}</view>
+    </view>
+    <view class="section-label">{{copy.centerCards}}</view>
+    <view class="center-results">
+      <view wx:for="{{centerRows}}" wx:key="index" class="center-result">
+        <view class="muted">{{item.index}}</view>
+        <view>{{item.originalName}}</view>
+        <view wx:if="{{item.roleChanged}}" class="gold">→ {{item.currentName}}</view>
+      </view>
+    </view>
+    <button class="button button--primary" bindtap="playAgain">{{copy.playAgain}}</button>
+    <button class="button button--secondary" bindtap="returnToSetup">{{copy.adjust}}</button>
+  </scroll-view>
+
+  <!-- Role editor -->
+  <view wx:if="{{roleEditorOpen}}" class="modal-backdrop">
+    <view class="modal">
+      <view class="page-title">{{copy.configure}}</view>
+      <view class="muted">{{roleEditorHelp}}</view>
+      <scroll-view class="role-editor-list" scroll-y>
+        <view wx:for="{{roleEditorCounts}}" wx:key="role" class="role-editor-row">
+          <view class="role-editor-icon">{{item.icon}}</view>
+          <view class="role-editor-copy">
+            <view class="card-title">{{item.name}}</view>
+            <view class="muted role-editor-desc">{{item.description}}</view>
+          </view>
+          <button class="counter-button" data-index="{{index}}" data-delta="-1" bindtap="changeRoleCount" disabled="{{item.count === 0}}">−</button>
+          <view class="counter">{{item.count}}</view>
+          <button class="counter-button" data-index="{{index}}" data-delta="1" bindtap="changeRoleCount" disabled="{{roleEditorTotal >= roleEditorRequired}}">＋</button>
+        </view>
+      </scroll-view>
+      <view class="button-row">
+        <button class="button button--secondary button-row__item" bindtap="closeRoleEditor">{{copy.cancel}}</button>
+        <button class="button button--primary button-row__item" bindtap="saveRoleEditor" disabled="{{roleEditorTotal !== roleEditorRequired}}">{{copy.save}}</button>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{busy}}" class="loading-overlay"><view class="spinner"></view></view>
+  <view wx:if="{{error}}" class="error-toast">{{error}}</view>
+</view>

@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "一夜狼人杀",
+    "navigationBarBackgroundColor": "#0c1113",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0c1113",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}
