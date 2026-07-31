@@ -42,4 +42,11 @@ poetry env info
 ### Copy the value for Virtualenv Executable ###
 ### Open the command palette and click the Python: Select Interpreter command ###
 ### Paste the value and press enter. If VSCode prompts you to "Creates a `.venv` virtual environment in the current directory", exit the menu and restart VSCode/your computer. Repeat the steps above until ur library gets recognised. ###
+```
 
+## Debug Android build
+
+```bash
+flutter clean
+flutter build apk --release
+```
