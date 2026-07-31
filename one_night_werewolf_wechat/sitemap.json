@@ -1,9 +1,0 @@
-{
-  "desc": "One Night Werewolf Mini Program",
-  "rules": [
-    {
-      "action": "disallow",
-      "page": "*"
-    }
-  ]
-}
