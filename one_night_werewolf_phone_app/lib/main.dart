@@ -959,6 +959,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
     final second = controller.secondsRemaining;
     final isIntroduction = controller.nightNarrationActive;
     if (controller.isRemoteGame ||
+        controller.nightTransitionActive ||
         role == null ||
         (lastSpokenSecond == second && lastNarrationStage == isIntroduction)) {
       return;

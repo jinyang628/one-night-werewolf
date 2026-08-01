@@ -45,6 +45,7 @@ class RoomAuthorizationError(PermissionError):
 
 class GameService:
     NIGHT_ACTION_SECONDS = 10
+    NIGHT_TRANSITION_SECONDS = 2
     NARRATION_LEAD_SECONDS = 3
 
     def __init__(self, repository: GameRepository):
@@ -371,7 +372,7 @@ class GameService:
 
     def _night_slot_seconds(self, game: GameState) -> int:
         return self.NIGHT_ACTION_SECONDS + (
-            self.NARRATION_LEAD_SECONDS
+            self.NIGHT_TRANSITION_SECONDS + self.NARRATION_LEAD_SECONDS
             if game.mode is GameMode.pass_and_play
             else 0
         )

@@ -514,6 +514,7 @@ class GameController extends ChangeNotifier {
   Timer? _gamePoller;
   int _nextPlayerNumber = 4;
   int nightRoleIndex = 0;
+  bool nightTransitionActive = false;
   bool nightNarrationActive = false;
 
   bool get isRemoteGame => game?.mode == 'room';
@@ -600,6 +601,7 @@ class GameController extends ChangeNotifier {
     actionSummary = '';
     actionCommitted = false;
     nightRoleIndex = 0;
+    nightTransitionActive = false;
     nightNarrationActive = false;
     error = null;
     phase = GamePhase.home;
@@ -1011,7 +1013,7 @@ class GameController extends ChangeNotifier {
         .difference(started.toUtc())
         .inSeconds;
     final normalizedElapsed = elapsed < 0 ? 0 : elapsed;
-    final slotSeconds = isRemoteGame ? 10 : 13;
+    final slotSeconds = isRemoteGame ? 10 : 14;
     final nextIndex = normalizedElapsed ~/ slotSeconds;
     if (nextIndex >= roles.length) {
       _timer?.cancel();
@@ -1025,12 +1027,13 @@ class GameController extends ChangeNotifier {
       actionCommitted = false;
     }
     final slotElapsed = normalizedElapsed % slotSeconds;
-    nightNarrationActive = !isRemoteGame && slotElapsed < 3;
+    nightTransitionActive = !isRemoteGame && slotElapsed < 1;
+    nightNarrationActive = !isRemoteGame && slotElapsed >= 1 && slotElapsed < 4;
     final countdownElapsed = isRemoteGame
         ? slotElapsed
-        : nightNarrationActive
+        : nightTransitionActive || nightNarrationActive
         ? 0
-        : slotElapsed - 3;
+        : slotElapsed - 4;
     secondsRemaining = 10 - countdownElapsed;
     notifyListeners();
   }
