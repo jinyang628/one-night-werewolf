@@ -65,6 +65,33 @@ void main() {
     expect(response.seenRoles, [Role.werewolf]);
   });
 
+  test('going home ends and clears the current game session', () async {
+    final client = MockClient(
+      (_) async => http.Response(jsonEncode(_gameJson()), 200),
+    );
+    final controller = GameController(
+      api: GameApi(client: client, baseUrl: 'http://localhost:8080/api/v1'),
+    );
+    addTearDown(controller.dispose);
+
+    expect(await controller.startGame(), isTrue);
+    expect(controller.phase, GamePhase.roleHandoff);
+    expect(controller.game, isNotNull);
+
+    controller.goHome();
+
+    expect(controller.phase, GamePhase.home);
+    expect(controller.game, isNull);
+    expect(controller.result, isNull);
+    expect(controller.room, isNull);
+    expect(controller.roomSession, isNull);
+    expect(controller.activeIndex, 0);
+    expect(controller.secondsRemaining, 180);
+    expect(controller.seenRoles, isEmpty);
+    expect(controller.actionSummary, isEmpty);
+    expect(controller.actionCommitted, isFalse);
+  });
+
   test('parses and localizes Minion and Insomniac roles', () {
     expect(Role.fromJson('minion'), Role.minion);
     expect(Role.fromJson('insomniac'), Role.insomniac);
@@ -81,6 +108,8 @@ Map<String, dynamic> _gameJson() => {
   'mode': 'pass_and_play',
   'status': 'in_progress',
   'phase': 'night',
+  'night_roles': ['werewolf', 'seer', 'robber', 'troublemaker'],
+  'night_started_at': '2026-08-01T00:00:00Z',
   'revision': 4,
   'players': [
     {

@@ -71,6 +71,8 @@ class GameState(BaseModel):
     center: list[Role]
     revealed_role_player_ids: list[str] = Field(default_factory=list)
     completed_action_player_ids: list[str] = Field(default_factory=list)
+    night_roles: list[Role]
+    night_started_at: str | None
     votes: dict[str, str] = Field(default_factory=dict)
     discussion_started_at: str | None = None
     result: GameResult | None = None

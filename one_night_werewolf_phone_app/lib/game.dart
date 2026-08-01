@@ -95,30 +95,39 @@ class GameSession {
   const GameSession({
     required this.id,
     required this.roomCode,
+    required this.mode,
     required this.revision,
     required this.serverPhase,
     required this.players,
     required this.originalCenter,
     required this.center,
     required this.completedActionPlayerIds,
+    required this.revealedRolePlayerIds,
+    required this.nightRoles,
+    required this.nightStartedAt,
     required this.votes,
     this.result,
   });
 
   final String id;
   final String roomCode;
+  final String mode;
   final int revision;
   final String serverPhase;
   final List<GamePlayer> players;
   final List<Role> originalCenter;
   final List<Role> center;
   final Set<String> completedActionPlayerIds;
+  final Set<String> revealedRolePlayerIds;
+  final List<Role> nightRoles;
+  final DateTime? nightStartedAt;
   final Map<String, String> votes;
   final GameResult? result;
 
   factory GameSession.fromJson(Map<String, dynamic> json) => GameSession(
     id: json['id'] as String,
     roomCode: json['room_code'] as String,
+    mode: json['mode'] as String,
     revision: json['revision'] as int,
     serverPhase: json['phase'] as String,
     players: [
@@ -135,6 +144,16 @@ class GameSession {
     completedActionPlayerIds: Set<String>.from(
       json['completed_action_player_ids'] as List? ?? const [],
     ),
+    revealedRolePlayerIds: Set<String>.from(
+      json['revealed_role_player_ids'] as List? ?? const [],
+    ),
+    nightRoles: [
+      for (final role in json['night_roles'] as List)
+        Role.fromJson(role as String),
+    ],
+    nightStartedAt: json['night_started_at'] == null
+        ? null
+        : DateTime.parse(json['night_started_at'] as String),
     votes: Map<String, String>.from(
       json['votes'] as Map<String, dynamic>? ?? const {},
     ),
@@ -234,6 +253,10 @@ class ApiException implements Exception {
   String toString() => message;
 }
 
+class ApiConflictException extends ApiException {
+  const ApiConflictException(super.message);
+}
+
 class GameApi {
   GameApi({http.Client? client, String? baseUrl})
     : _client = client ?? http.Client(),
@@ -272,6 +295,7 @@ class GameApi {
     required String actorId,
     List<String> playerTargets = const [],
     List<int> centerTargets = const [],
+    bool includeExpectedRevision = true,
   }) async {
     final json = await _request(
       'POST',
@@ -280,7 +304,7 @@ class GameApi {
         'actor_id': actorId,
         'player_targets': playerTargets,
         'center_targets': centerTargets,
-        'expected_revision': game.revision,
+        'expected_revision': includeExpectedRevision ? game.revision : null,
       },
     );
     return NightActionResponse.fromJson(json);
@@ -289,27 +313,36 @@ class GameApi {
   Future<GameSession> acknowledgeRole({
     required GameSession game,
     required String playerId,
+    bool includeExpectedRevision = true,
   }) async => GameSession.fromJson(
     await _request(
       'POST',
       '/games/${game.id}/role-acknowledgements',
-      body: {'player_id': playerId, 'expected_revision': game.revision},
+      body: {
+        'player_id': playerId,
+        'expected_revision': includeExpectedRevision ? game.revision : null,
+      },
     ),
   );
 
-  Future<GameSession> endDiscussion(GameSession game) async =>
-      GameSession.fromJson(
-        await _request(
-          'POST',
-          '/games/${game.id}/end-discussion',
-          body: {'expected_revision': game.revision},
-        ),
-      );
+  Future<GameSession> endDiscussion(
+    GameSession game, {
+    bool includeExpectedRevision = true,
+  }) async => GameSession.fromJson(
+    await _request(
+      'POST',
+      '/games/${game.id}/end-discussion',
+      body: {
+        'expected_revision': includeExpectedRevision ? game.revision : null,
+      },
+    ),
+  );
 
   Future<GameSession> castVote({
     required GameSession game,
     required String voterId,
     required String targetId,
+    bool includeExpectedRevision = true,
   }) async {
     final json = await _request(
       'POST',
@@ -317,7 +350,7 @@ class GameApi {
       body: {
         'voter_id': voterId,
         'target_id': targetId,
-        'expected_revision': game.revision,
+        'expected_revision': includeExpectedRevision ? game.revision : null,
       },
     );
     return GameSession.fromJson(json['game'] as Map<String, dynamic>);
@@ -362,7 +395,10 @@ class GameApi {
     ),
   );
 
-  Future<void> startRoom(RoomSession session, int expectedRevision) async {
+  Future<GameSession> startRoom(
+    RoomSession session,
+    int expectedRevision,
+  ) async => GameSession.fromJson(
     await _request(
       'POST',
       '/games/rooms/${session.room.roomCode}/start',
@@ -371,8 +407,8 @@ class GameApi {
         'player_token': session.playerToken,
         'expected_revision': expectedRevision,
       },
-    );
-  }
+    ),
+  );
 
   Future<Map<String, dynamic>> _request(
     String method,
@@ -405,6 +441,11 @@ class GameApi {
       final message = decoded is Map<String, dynamic>
           ? decoded['detail']?.toString()
           : null;
+      if (response.statusCode == 409) {
+        throw ApiConflictException(
+          message ?? 'The game changed on another device.',
+        );
+      }
       throw ApiException(message ?? 'The server rejected this request.');
     }
     return decoded as Map<String, dynamic>;
@@ -434,6 +475,7 @@ enum GamePhase {
   roomLobby,
   roleHandoff,
   roleReveal,
+  roleWaiting,
   nightHandoff,
   nightAction,
   discussion,
@@ -469,19 +511,44 @@ class GameController extends ChangeNotifier {
   String? error;
   Timer? _timer;
   Timer? _roomPoller;
+  Timer? _gamePoller;
   int _nextPlayerNumber = 4;
-  List<GamePlayer> _nightActors = [];
+  int nightRoleIndex = 0;
+  bool nightNarrationActive = false;
+
+  bool get isRemoteGame => game?.mode == 'room';
+
+  Role? get currentNightRole => game == null || game!.nightRoles.isEmpty
+      ? null
+      : game!.nightRoles[nightRoleIndex.clamp(0, game!.nightRoles.length - 1)];
+
+  List<GamePlayer> get currentNightActors =>
+      game == null || currentNightRole == null
+      ? const []
+      : game!.players
+            .where((player) => player.originalRole == currentNightRole)
+            .toList();
+
+  GamePlayer? get currentNightActor {
+    if (currentNightActors.isEmpty) return null;
+    if (!isRemoteGame) return currentNightActors.first;
+    return currentNightActors
+        .where((player) => player.player.id == roomSession?.playerId)
+        .firstOrNull;
+  }
+
+  bool get canPerformCurrentNightAction => currentNightActor != null;
 
   Player get activePlayer {
     if (phase == GamePhase.nightHandoff || phase == GamePhase.nightAction) {
-      return _nightActors[activeIndex].player;
+      return currentNightActor?.player ?? game!.players.first.player;
     }
     return game!.players[activeIndex].player;
   }
 
   GamePlayer get activeGamePlayer {
     if (phase == GamePhase.nightHandoff || phase == GamePhase.nightAction) {
-      return _nightActors[activeIndex];
+      return currentNightActor ?? game!.players.first;
     }
     return game!.players[activeIndex];
   }
@@ -518,10 +585,22 @@ class GameController extends ChangeNotifier {
 
   void goHome() {
     _timer?.cancel();
+    _timer = null;
     _roomPoller?.cancel();
+    _roomPoller = null;
+    _gamePoller?.cancel();
+    _gamePoller = null;
     game = null;
+    result = null;
     room = null;
     roomSession = null;
+    activeIndex = 0;
+    secondsRemaining = 180;
+    seenRoles = [];
+    actionSummary = '';
+    actionCommitted = false;
+    nightRoleIndex = 0;
+    nightNarrationActive = false;
     error = null;
     phase = GamePhase.home;
     notifyListeners();
@@ -597,8 +676,13 @@ class GameController extends ChangeNotifier {
   Future<void> startRemoteRoom() async {
     if (roomSession == null) return;
     await _guard(() async {
-      await _api.startRoom(roomSession!, room!.revision);
-      room = await _api.getRoom(roomSession!.room.roomCode);
+      game = await _api.startRoom(roomSession!, room!.revision);
+      _roomPoller?.cancel();
+      activeIndex = game!.players.indexWhere(
+        (player) => player.player.id == roomSession!.playerId,
+      );
+      phase = GamePhase.roleReveal;
+      _startGamePolling();
     });
   }
 
@@ -625,24 +709,43 @@ class GameController extends ChangeNotifier {
 
   Future<void> hideRoleAndContinue() async {
     final advanced = await _guard(() async {
-      game = await _api.acknowledgeRole(game: game!, playerId: activePlayer.id);
+      if (!isRemoteGame) {
+        game = await _api.acknowledgeRole(
+          game: game!,
+          playerId: activePlayer.id,
+        );
+        return;
+      }
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          game = await _api.acknowledgeRole(
+            game: game!,
+            playerId: activePlayer.id,
+            includeExpectedRevision: false,
+          );
+          return;
+        } on ApiConflictException {
+          game = await _api.getGame(game!.id);
+          if (game!.revealedRolePlayerIds.contains(roomSession!.playerId)) {
+            return;
+          }
+          if (attempt == 2) rethrow;
+        }
+      }
     });
     if (!advanced) return;
-    if (activeIndex < game!.players.length - 1) {
+    if (isRemoteGame) {
+      phase = game!.serverPhase == 'night'
+          ? GamePhase.nightAction
+          : GamePhase.roleWaiting;
+      if (phase == GamePhase.nightAction) _startNightTimer();
+    } else if (activeIndex < game!.players.length - 1) {
       activeIndex++;
       phase = GamePhase.roleHandoff;
     } else {
-      _nightActors =
-          game!.players
-              .where((player) => player.originalRole != Role.villager)
-              .toList()
-            ..sort(
-              (a, b) => _nightOrder(
-                a.originalRole,
-              ).compareTo(_nightOrder(b.originalRole)),
-            );
       activeIndex = 0;
-      phase = GamePhase.nightHandoff;
+      phase = GamePhase.nightAction;
+      _startNightTimer();
     }
     notifyListeners();
   }
@@ -727,12 +830,22 @@ class GameController extends ChangeNotifier {
     required String summary,
   }) async {
     await _guard(() async {
-      final response = await _api.nightAction(
-        game: game!,
-        actorId: activePlayer.id,
-        playerTargets: playerTargets,
-        centerTargets: centerTargets,
-      );
+      late NightActionResponse response;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await _api.nightAction(
+            game: game!,
+            actorId: activePlayer.id,
+            playerTargets: playerTargets,
+            centerTargets: centerTargets,
+            includeExpectedRevision: !isRemoteGame,
+          );
+          break;
+        } on ApiConflictException {
+          if (!isRemoteGame || attempt == 2) rethrow;
+          game = await _api.getGame(game!.id);
+        }
+      }
       game = response.game;
       seenRoles = response.seenRoles;
       actionSummary = summary;
@@ -741,29 +854,24 @@ class GameController extends ChangeNotifier {
   }
 
   void finishNightTurn() {
-    if (!actionCommitted) return;
-    seenRoles = [];
-    actionSummary = '';
-    if (activeIndex < _nightActors.length - 1) {
-      activeIndex++;
-      phase = GamePhase.nightHandoff;
-    } else {
-      activeIndex = 0;
-      phase = GamePhase.discussion;
-      secondsRemaining = 180;
-      _startTimer();
-    }
-    notifyListeners();
+    // Night roles advance on the shared ten-second timeline.
   }
 
   Future<void> endDiscussion() async {
     final advanced = await _guard(() async {
-      game = await _api.endDiscussion(game!);
+      game = await _api.endDiscussion(
+        game!,
+        includeExpectedRevision: !isRemoteGame,
+      );
     });
     if (advanced) {
       _timer?.cancel();
-      activeIndex = 0;
-      phase = GamePhase.voteHandoff;
+      if (isRemoteGame) {
+        phase = GamePhase.voting;
+      } else {
+        activeIndex = 0;
+        phase = GamePhase.voteHandoff;
+      }
       notifyListeners();
     }
   }
@@ -780,8 +888,12 @@ class GameController extends ChangeNotifier {
         game: game!,
         voterId: activePlayer.id,
         targetId: targetId,
+        includeExpectedRevision: !isRemoteGame,
       );
-      if (activeIndex < game!.players.length - 1) {
+      if (isRemoteGame) {
+        result = game!.result;
+        phase = result == null ? GamePhase.voting : GamePhase.result;
+      } else if (activeIndex < game!.players.length - 1) {
         activeIndex++;
         phase = GamePhase.voteHandoff;
       } else {
@@ -793,6 +905,7 @@ class GameController extends ChangeNotifier {
 
   void returnToSetup() {
     _timer?.cancel();
+    _gamePoller?.cancel();
     game = null;
     result = null;
     activeIndex = 0;
@@ -849,6 +962,12 @@ class GameController extends ChangeNotifier {
         notifyListeners();
         if (room!.status != 'waiting') {
           _roomPoller?.cancel();
+          game = await _api.getGame(room!.id);
+          activeIndex = game!.players.indexWhere(
+            (player) => player.player.id == roomSession!.playerId,
+          );
+          _syncRemotePhase();
+          _startGamePolling();
         }
       } on ApiException catch (exception) {
         error = exception.message;
@@ -870,20 +989,118 @@ class GameController extends ChangeNotifier {
     });
   }
 
-  static int _nightOrder(Role role) => switch (role) {
-    Role.werewolf => 0,
-    Role.minion => 1,
-    Role.seer => 2,
-    Role.robber => 3,
-    Role.troublemaker => 4,
-    Role.insomniac => 5,
-    Role.villager => 6,
-  };
+  void _startNightTimer() {
+    _timer?.cancel();
+    _updateNightClock();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _updateNightClock();
+    });
+  }
+
+  void _updateNightClock() {
+    final started = game?.nightStartedAt;
+    final roles = game?.nightRoles ?? const <Role>[];
+    if (roles.isEmpty) {
+      _timer?.cancel();
+      _refreshAfterNight();
+      return;
+    }
+    if (started == null) return;
+    final elapsed = DateTime.now()
+        .toUtc()
+        .difference(started.toUtc())
+        .inSeconds;
+    final normalizedElapsed = elapsed < 0 ? 0 : elapsed;
+    final slotSeconds = isRemoteGame ? 10 : 13;
+    final nextIndex = normalizedElapsed ~/ slotSeconds;
+    if (nextIndex >= roles.length) {
+      _timer?.cancel();
+      _refreshAfterNight();
+      return;
+    }
+    if (nightRoleIndex != nextIndex) {
+      nightRoleIndex = nextIndex;
+      seenRoles = [];
+      actionSummary = '';
+      actionCommitted = false;
+    }
+    final slotElapsed = normalizedElapsed % slotSeconds;
+    nightNarrationActive = !isRemoteGame && slotElapsed < 3;
+    final countdownElapsed = isRemoteGame
+        ? slotElapsed
+        : nightNarrationActive
+        ? 0
+        : slotElapsed - 3;
+    secondsRemaining = 10 - countdownElapsed;
+    notifyListeners();
+  }
+
+  Future<void> _refreshAfterNight() async {
+    if (busy || game == null) return;
+    try {
+      game = await _api.getGame(game!.id);
+      _syncRemotePhase();
+      if (game!.serverPhase == 'discussion') {
+        phase = GamePhase.discussion;
+        secondsRemaining = 180;
+        _startTimer();
+      }
+      notifyListeners();
+    } on ApiException catch (exception) {
+      error = exception.message;
+      notifyListeners();
+    }
+  }
+
+  void _startGamePolling() {
+    _gamePoller?.cancel();
+    _gamePoller = Timer.periodic(const Duration(seconds: 1), (_) async {
+      if (busy || game == null) return;
+      try {
+        game = await _api.getGame(game!.id);
+        _syncRemotePhase();
+        notifyListeners();
+      } on ApiException catch (exception) {
+        error = exception.message;
+        notifyListeners();
+      }
+    });
+  }
+
+  void _syncRemotePhase() {
+    if (!isRemoteGame || game == null) return;
+    switch (game!.serverPhase) {
+      case 'role_reveal':
+        phase = game!.revealedRolePlayerIds.contains(roomSession!.playerId)
+            ? GamePhase.roleWaiting
+            : GamePhase.roleReveal;
+        break;
+      case 'night':
+        phase = GamePhase.nightAction;
+        _updateNightClock();
+        break;
+      case 'discussion':
+        if (phase != GamePhase.discussion) {
+          phase = GamePhase.discussion;
+          secondsRemaining = 180;
+          _startTimer();
+        }
+        break;
+      case 'voting':
+        phase = GamePhase.voting;
+        break;
+      case 'complete':
+        result = game!.result;
+        phase = GamePhase.result;
+        break;
+    }
+  }
 
   @override
   void dispose() {
     _timer?.cancel();
     _roomPoller?.cancel();
+    _gamePoller?.cancel();
     _api.close();
     super.dispose();
   }

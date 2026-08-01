@@ -3,7 +3,7 @@ import secrets
 import string
 from collections import Counter
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from app.models.games import (
@@ -44,6 +44,9 @@ class RoomAuthorizationError(PermissionError):
 
 
 class GameService:
+    NIGHT_ACTION_SECONDS = 10
+    NARRATION_LEAD_SECONDS = 3
+
     def __init__(self, repository: GameRepository):
         self.repository = repository
 
@@ -60,7 +63,16 @@ class GameService:
         return self._game_from_row(row)
 
     async def get_game(self, game_id: str) -> GameState:
-        return self._game_from_row(await self.repository.get_by_id(game_id))
+        row = await self.repository.get_by_id(game_id)
+        game = self._game_from_row(row)
+        if self._night_has_ended(game):
+            game.phase = GamePhase.discussion
+            game.discussion_started_at = self._night_ends_at(game).isoformat()
+            try:
+                return await self._save_game(game, game.revision)
+            except GameConflictError:
+                return self._game_from_row(await self.repository.get_by_id(game_id))
+        return game
 
     async def acknowledge_role(
         self, game_id: str, input: AdvanceGameRequest
@@ -78,6 +90,7 @@ class GameService:
         game.revealed_role_player_ids.append(input.player_id)
         if len(game.revealed_role_player_ids) == len(game.players):
             game.phase = GamePhase.night
+            game.night_started_at = self._now()
         return await self._save_game(game, game.revision)
 
     async def perform_night_action(
@@ -130,14 +143,6 @@ class GameService:
             raise GameActionError("The Villager does not take a night action")
 
         updated_game.completed_action_player_ids.append(actor.id)
-        action_player_ids = {
-            player.id
-            for player in updated_game.players
-            if player.original_role is not Role.villager
-        }
-        if action_player_ids == set(updated_game.completed_action_player_ids):
-            updated_game.phase = GamePhase.discussion
-            updated_game.discussion_started_at = self._now()
         saved = await self._save_game(updated_game, game.revision)
         return NightActionResponse(game=saved, seen_roles=seen_roles)
 
@@ -341,6 +346,41 @@ class GameService:
             players=game_players,
             original_center=center,
             center=center,
+            night_roles=self._night_roles(roles),
+            night_started_at=None,
+        )
+
+    @staticmethod
+    def _night_roles(roles: list[Role]) -> list[Role]:
+        ordered = [
+            Role.werewolf,
+            Role.minion,
+            Role.seer,
+            Role.robber,
+            Role.troublemaker,
+            Role.insomniac,
+        ]
+        return [role for role in ordered if role in roles]
+
+    def _night_ends_at(self, game: GameState) -> datetime:
+        assert game.night_started_at is not None
+        started = datetime.fromisoformat(game.night_started_at)
+        return started + timedelta(
+            seconds=len(game.night_roles) * self._night_slot_seconds(game)
+        )
+
+    def _night_slot_seconds(self, game: GameState) -> int:
+        return self.NIGHT_ACTION_SECONDS + (
+            self.NARRATION_LEAD_SECONDS
+            if game.mode is GameMode.pass_and_play
+            else 0
+        )
+
+    def _night_has_ended(self, game: GameState) -> bool:
+        return (
+            game.phase is GamePhase.night
+            and game.night_started_at is not None
+            and datetime.now(UTC) >= self._night_ends_at(game)
         )
 
     def _game_payload(self, game: GameState) -> dict:

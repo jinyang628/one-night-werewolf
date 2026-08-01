@@ -42,6 +42,25 @@ void main() {
     expect(find.text('How are you playing?'), findsOneWidget);
     expect(find.text('Pass & play'), findsOneWidget);
     expect(find.text('Create or join a room'), findsOneWidget);
+    expect(find.byKey(const Key('home-button')), findsNothing);
+  });
+
+  testWidgets('home button appears off home and ends the current flow', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const WerewolfApp());
+
+    await tester.tap(find.text('Pass & play'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('home-button')), findsOneWidget);
+    expect(find.text('Who is at the table?'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('home-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('How are you playing?'), findsOneWidget);
+    expect(find.byKey(const Key('home-button')), findsNothing);
   });
 
   testWidgets('toggles from English to Chinese', (tester) async {

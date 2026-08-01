@@ -30,6 +30,7 @@ flutter run -d <ios_simulator_id>
 flutter emulators
 flutter emulators --launch <android_device_id> 
 flutter run -d android # Obtain the android simulator ID
+adb uninstall com.example.one_night_werewolf
 flutter run -d <android_simulator_id>
 ```
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 
 import 'game.dart';
 import 'l10n.dart';
@@ -122,6 +123,8 @@ class _GameShellState extends State<GameShell> {
   static bool _isNightPhase(GamePhase phase) =>
       phase == GamePhase.nightHandoff || phase == GamePhase.nightAction;
 
+  static bool shouldShowHomeButton(GamePhase phase) => phase != GamePhase.home;
+
   @override
   void dispose() {
     controller
@@ -133,11 +136,13 @@ class _GameShellState extends State<GameShell> {
   @override
   Widget build(BuildContext context) {
     final showOrientationControls = _isNightPhase(controller.phase);
+    final showHomeButton = shouldShowHomeButton(controller.phase);
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
+              top: showHomeButton ? 56 : 0,
               child: RotatedBox(
                 quarterTurns: showOrientationControls ? nightQuarterTurns : 0,
                 child: AnimatedSwitcher(
@@ -166,6 +171,9 @@ class _GameShellState extends State<GameShell> {
                     GamePhase.roleReveal => RoleRevealScreen(
                       controller: controller,
                     ),
+                    GamePhase.roleWaiting => RoleWaitingScreen(
+                      controller: controller,
+                    ),
                     GamePhase.nightHandoff => PrivateHandoff(
                       key: ValueKey('night-${controller.activeIndex}'),
                       eyebrow: context.tr('night_action'),
@@ -176,7 +184,7 @@ class _GameShellState extends State<GameShell> {
                       onContinue: controller.beginNightAction,
                     ),
                     GamePhase.nightAction => NightActionScreen(
-                      key: ValueKey('action-${controller.activeIndex}'),
+                      key: ValueKey('action-${controller.nightRoleIndex}'),
                       controller: controller,
                     ),
                     GamePhase.discussion => DiscussionScreen(
@@ -200,6 +208,22 @@ class _GameShellState extends State<GameShell> {
               TableOrientationControls(
                 quarterTurns: nightQuarterTurns,
                 onChanged: (value) => setState(() => nightQuarterTurns = value),
+              ),
+            if (showHomeButton)
+              Positioned(
+                top: 4,
+                left: 8,
+                child: Material(
+                  color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                  shape: const CircleBorder(),
+                  elevation: 2,
+                  child: IconButton(
+                    key: const Key('home-button'),
+                    tooltip: context.tr('end_game_home'),
+                    onPressed: controller.busy ? null : controller.goHome,
+                    icon: const Icon(Icons.home_rounded),
+                  ),
+                ),
               ),
             if (controller.busy)
               const Positioned.fill(
@@ -386,14 +410,6 @@ class _RoomEntryScreenState extends State<RoomEntryScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              onPressed: widget.controller.goHome,
-              icon: const Icon(Icons.arrow_back_rounded),
-            ),
-          ),
           const SizedBox(height: 18),
           Text(
             context.tr('play_phones'),
@@ -887,6 +903,29 @@ class RoleRevealScreen extends StatelessWidget {
   }
 }
 
+class RoleWaitingScreen extends StatelessWidget {
+  const RoleWaitingScreen({super.key, required this.controller});
+  final GameController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return ScreenPadding(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 28),
+          Text(
+            context.tr('waiting_role_reveals'),
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineMedium,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class NightActionScreen extends StatefulWidget {
   const NightActionScreen({super.key, required this.controller});
   final GameController controller;
@@ -898,31 +937,112 @@ class NightActionScreen extends StatefulWidget {
 class _NightActionScreenState extends State<NightActionScreen> {
   final Set<int> centerSelection = {};
   final Set<String> playerSelection = {};
+  final FlutterTts narrator = FlutterTts();
+  int? lastSpokenSecond;
+  bool? lastNarrationStage;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _narrateIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(NightActionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _narrateIfNeeded();
+  }
+
+  Future<void> _narrateIfNeeded() async {
+    final controller = widget.controller;
+    final role = controller.currentNightRole;
+    final second = controller.secondsRemaining;
+    final isIntroduction = controller.nightNarrationActive;
+    if (controller.isRemoteGame ||
+        role == null ||
+        (lastSpokenSecond == second && lastNarrationStage == isIntroduction)) {
+      return;
+    }
+    lastSpokenSecond = second;
+    lastNarrationStage = isIntroduction;
+    final roleName = context.tr(role.name);
+    final introduction = context.tr('night_narration', {'role': roleName});
+    final closing = context.tr('close_role_eyes', {'role': roleName});
+    await narrator.setLanguage(
+      controller.languageCode == 'zh' ? 'zh-CN' : 'en-US',
+    );
+    await narrator.setSpeechRate(0.48);
+    if (isIntroduction) {
+      await narrator.speak(introduction);
+    } else if (second > 0) {
+      await narrator.speak('$second');
+    } else {
+      await narrator.speak(closing);
+    }
+  }
+
+  @override
+  void dispose() {
+    narrator.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
-    final actor = controller.activeGamePlayer;
+    final role = controller.currentNightRole;
+    final actor = controller.currentNightActor;
+    if (role == null) {
+      return ScreenPadding(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 24),
+            Text(
+              context.tr('preparing_night'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+          ],
+        ),
+      );
+    }
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth > constraints.maxHeight;
-        final guidance = _nightGuidance(context, actor, compact: isWide);
+        final guidance = _nightGuidance(context, role, actor, compact: isWide);
         final action = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (controller.isRemoteGame) ...[
+              Text(
+                context.tr('waiting_for_role', {'role': context.tr(role.name)}),
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Expanded(
               child: SingleChildScrollView(
                 child: controller.actionCommitted
                     ? _ActionResult(controller: controller)
-                    : _actionPicker(controller, actor),
+                    : actor != null
+                    ? _actionPicker(controller, actor)
+                    : _waitingPanel(context, controller, role),
               ),
             ),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: controller.actionCommitted
-                  ? controller.finishNightTurn
-                  : null,
-              child: Text(context.tr('hide_continue')),
+            Text(
+              '${controller.secondsRemaining}',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                fontSize: 64,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
           ],
         );
@@ -962,7 +1082,8 @@ class _NightActionScreenState extends State<NightActionScreen> {
 
   Widget _nightGuidance(
     BuildContext context,
-    GamePlayer actor, {
+    Role role,
+    GamePlayer? actor, {
     required bool compact,
   }) {
     return Column(
@@ -970,7 +1091,9 @@ class _NightActionScreenState extends State<NightActionScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '${context.tr(actor.originalRole.name).toUpperCase()} · ${actor.player.name}',
+          actor == null
+              ? context.tr(role.name).toUpperCase()
+              : '${context.tr(role.name).toUpperCase()} · ${actor.player.name}',
           style: TextStyle(
             color: Theme.of(context).colorScheme.primary,
             fontWeight: FontWeight.w800,
@@ -979,20 +1102,36 @@ class _NightActionScreenState extends State<NightActionScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          _nightTitle(context, actor.originalRole),
+          _nightTitle(context, role),
           style: compact
               ? Theme.of(context).textTheme.titleLarge
               : Theme.of(context).textTheme.headlineMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          context.tr('${actor.originalRole.name}_description'),
+          context.tr('${role.name}_description'),
           style: TextStyle(
             color: Colors.white.withValues(alpha: .6),
             height: 1.4,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _waitingPanel(
+    BuildContext context,
+    GameController controller,
+    Role role,
+  ) {
+    return InfoPanel(
+      icon: controller.isRemoteGame
+          ? Icons.hourglass_top_rounded
+          : Icons.style_rounded,
+      text: controller.isRemoteGame
+          ? context.tr('waiting_for_role', {'role': context.tr(role.name)})
+          : context.tr('role_not_among_players'),
+      caption: context.tr('night_action'),
     );
   }
 
@@ -1261,6 +1400,23 @@ class VotingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (controller.isRemoteGame &&
+        controller.game!.votes.containsKey(controller.activePlayer.id)) {
+      return ScreenPadding(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 28),
+            Text(
+              context.tr('waiting_for_votes'),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+          ],
+        ),
+      );
+    }
     final others = controller.otherPlayers(controller.activePlayer.id);
     return ScreenPadding(
       child: Column(

@@ -1,4 +1,5 @@
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from app.models.games import (
     AdvanceGameRequest,
@@ -76,6 +77,45 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(Role.minion, all_roles)
         self.assertIn(Role.insomniac, all_roles)
         self.assertIn(Role.troublemaker, all_roles)
+        self.assertEqual(
+            game.night_roles,
+            [
+                Role.werewolf,
+                Role.minion,
+                Role.seer,
+                Role.robber,
+                Role.troublemaker,
+                Role.insomniac,
+            ],
+        )
+
+    async def test_night_timeline_includes_roles_dealt_to_the_center(self):
+        game = await self.service.start_game(self.start_request)
+        center_only_roles = {
+            *game.original_center,
+        } - {player.original_role for player in game.players}
+
+        self.assertTrue(center_only_roles)
+        self.assertTrue(center_only_roles.issubset(set(game.night_roles)))
+
+        for player in game.players:
+            game = await self.service.acknowledge_role(
+                game.id,
+                AdvanceGameRequest(player_id=player.id),
+            )
+        stored_state = self.repository.rows[game.id]["state"]
+        stored_state["night_started_at"] = (
+            datetime.now(UTC)
+            - timedelta(
+                seconds=len(game.night_roles)
+                * self.service._night_slot_seconds(game)
+                + 1
+            )
+        ).isoformat()
+
+        advanced = await self.service.get_game(game.id)
+
+        self.assertEqual(advanced.phase, GamePhase.discussion)
 
     def test_minion_wins_when_no_werewolf_is_present_and_someone_else_dies(self):
         game = GameState(
@@ -113,6 +153,15 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
                 Role.troublemaker,
             ],
             center=[Role.werewolf, Role.robber, Role.troublemaker],
+            night_roles=[
+                Role.werewolf,
+                Role.minion,
+                Role.seer,
+                Role.robber,
+                Role.troublemaker,
+                Role.insomniac,
+            ],
+            night_started_at=None,
             votes={"a": "b", "b": "c", "c": "b"},
         )
 
