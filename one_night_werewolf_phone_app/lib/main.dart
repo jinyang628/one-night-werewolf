@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -135,8 +137,11 @@ class _GameShellState extends State<GameShell> {
 
   @override
   Widget build(BuildContext context) {
-    final showOrientationControls = _isNightPhase(controller.phase);
-    final showHomeButton = shouldShowHomeButton(controller.phase);
+    final blackedOut = controller.nightTransitionActive;
+    final showOrientationControls =
+        _isNightPhase(controller.phase) && !blackedOut;
+    final showHomeButton =
+        shouldShowHomeButton(controller.phase) && !blackedOut;
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -146,7 +151,9 @@ class _GameShellState extends State<GameShell> {
               child: RotatedBox(
                 quarterTurns: showOrientationControls ? nightQuarterTurns : 0,
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 250),
+                  duration: blackedOut
+                      ? Duration.zero
+                      : const Duration(milliseconds: 250),
                   child: switch (controller.phase) {
                     GamePhase.home => HomeScreen(
                       controller: controller,
@@ -940,6 +947,8 @@ class _NightActionScreenState extends State<NightActionScreen> {
   final FlutterTts narrator = FlutterTts();
   int? lastSpokenSecond;
   bool? lastNarrationStage;
+  Timer? closingNarrationTimer;
+  bool closingNarrationScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -958,10 +967,12 @@ class _NightActionScreenState extends State<NightActionScreen> {
     final role = controller.currentNightRole;
     final second = controller.secondsRemaining;
     final isIntroduction = controller.nightNarrationActive;
-    if (controller.isRemoteGame ||
-        controller.nightTransitionActive ||
-        role == null ||
-        (lastSpokenSecond == second && lastNarrationStage == isIntroduction)) {
+    if (controller.isRemoteGame || role == null) return;
+    if (controller.nightTransitionActive) {
+      _scheduleClosingNarration();
+      return;
+    }
+    if (lastSpokenSecond == second && lastNarrationStage == isIntroduction) {
       return;
     }
     lastSpokenSecond = second;
@@ -982,8 +993,32 @@ class _NightActionScreenState extends State<NightActionScreen> {
     }
   }
 
+  void _scheduleClosingNarration() {
+    final controller = widget.controller;
+    if (closingNarrationScheduled || controller.nightRoleIndex == 0) return;
+    closingNarrationScheduled = true;
+    final roleIndex = controller.nightRoleIndex;
+    closingNarrationTimer = Timer(const Duration(milliseconds: 600), () async {
+      if (!mounted ||
+          !controller.nightTransitionActive ||
+          controller.nightRoleIndex != roleIndex) {
+        return;
+      }
+      final previousRole = controller.game!.nightRoles[roleIndex - 1];
+      final closing = context.tr('close_role_eyes', {
+        'role': context.tr(previousRole.name),
+      });
+      await narrator.setLanguage(
+        controller.languageCode == 'zh' ? 'zh-CN' : 'en-US',
+      );
+      await narrator.setSpeechRate(0.48);
+      await narrator.speak(closing);
+    });
+  }
+
   @override
   void dispose() {
+    closingNarrationTimer?.cancel();
     narrator.stop();
     super.dispose();
   }
@@ -993,6 +1028,9 @@ class _NightActionScreenState extends State<NightActionScreen> {
     final controller = widget.controller;
     final role = controller.currentNightRole;
     final actor = controller.currentNightActor;
+    if (controller.nightTransitionActive) {
+      return const ColoredBox(color: Colors.black);
+    }
     if (role == null) {
       return ScreenPadding(
         child: Column(
@@ -1045,6 +1083,7 @@ class _NightActionScreenState extends State<NightActionScreen> {
                 color: Theme.of(context).colorScheme.primary,
               ),
             ),
+            SizedBox(height: isWide ? 20 : 48),
           ],
         );
 

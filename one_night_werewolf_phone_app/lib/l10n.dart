@@ -73,7 +73,7 @@ const _strings = <String, Map<String, String>>{
     'face_left': 'Face the left side',
     'start_action': 'Start my action',
     'night_narration':
-        '{role}, open your eyes and perform your night action. You have ten seconds.',
+        '{role}, open your eyes and perform your night action. You have fifteen seconds.',
     'close_role_eyes': '{role}, close your eyes.',
     'waiting_for_role': 'Waiting for the {role} night action',
     'role_not_among_players':
@@ -218,7 +218,7 @@ const _strings = <String, Map<String, String>>{
     'face_bottom': '朝向下方座位',
     'face_left': '朝向左侧座位',
     'start_action': '开始我的行动',
-    'night_narration': '{role}，请睁开眼睛并执行夜间行动。你有十秒钟。',
+    'night_narration': '{role}，请睁开眼睛并执行夜间行动。你有十五秒钟。',
     'close_role_eyes': '{role}，请闭上眼睛。',
     'waiting_for_role': '正在等待{role}执行夜间行动',
     'role_not_among_players': '该身份牌在本局牌池中，但没有玩家持有。',

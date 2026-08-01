@@ -1013,7 +1013,7 @@ class GameController extends ChangeNotifier {
         .difference(started.toUtc())
         .inSeconds;
     final normalizedElapsed = elapsed < 0 ? 0 : elapsed;
-    final slotSeconds = isRemoteGame ? 10 : 14;
+    final slotSeconds = isRemoteGame ? 15 : 22;
     final nextIndex = normalizedElapsed ~/ slotSeconds;
     if (nextIndex >= roles.length) {
       _timer?.cancel();
@@ -1027,14 +1027,14 @@ class GameController extends ChangeNotifier {
       actionCommitted = false;
     }
     final slotElapsed = normalizedElapsed % slotSeconds;
-    nightTransitionActive = !isRemoteGame && slotElapsed < 1;
-    nightNarrationActive = !isRemoteGame && slotElapsed >= 1 && slotElapsed < 4;
+    nightTransitionActive = !isRemoteGame && slotElapsed < 4;
+    nightNarrationActive = !isRemoteGame && slotElapsed >= 4 && slotElapsed < 7;
     final countdownElapsed = isRemoteGame
         ? slotElapsed
         : nightTransitionActive || nightNarrationActive
         ? 0
-        : slotElapsed - 4;
-    secondsRemaining = 10 - countdownElapsed;
+        : slotElapsed - 7;
+    secondsRemaining = 15 - countdownElapsed;
     notifyListeners();
   }
 
