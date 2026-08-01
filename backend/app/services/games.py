@@ -44,8 +44,8 @@ class RoomAuthorizationError(PermissionError):
 
 
 class GameService:
-    NIGHT_ACTION_SECONDS = 10
-    NIGHT_TRANSITION_SECONDS = 1
+    NIGHT_ACTION_SECONDS = 15
+    NIGHT_TRANSITION_SECONDS = 4
     NARRATION_LEAD_SECONDS = 3
 
     def __init__(self, repository: GameRepository):
@@ -155,18 +155,43 @@ class GameService:
         self._check_revision(game, input.expected_revision)
         if game.phase is not GamePhase.discussion:
             raise GameActionError("The game is not in discussion")
+        if game.mode is GameMode.room:
+            raise GameActionError("Room players must become ready independently")
         game.phase = GamePhase.voting
+        return await self._save_game(game, game.revision)
+
+    async def mark_ready_to_vote(
+        self, game_id: str, input: AdvanceGameRequest
+    ) -> GameState:
+        row = await self.repository.get_by_id(game_id)
+        game = self._game_from_row(row)
+        self._check_revision(game, input.expected_revision)
+        if game.phase not in (GamePhase.discussion, GamePhase.voting):
+            raise GameActionError("The game is not in discussion")
+        if input.player_id is None:
+            raise GameActionError("A player id is required")
+        self._player(game, input.player_id)
+        if input.player_id in game.ready_to_vote_player_ids:
+            return game
+        game.ready_to_vote_player_ids.append(input.player_id)
+        if len(game.ready_to_vote_player_ids) == len(game.players):
+            game.phase = GamePhase.voting
         return await self._save_game(game, game.revision)
 
     async def cast_vote(self, game_id: str, input: VoteRequest) -> VoteResponse:
         row = await self.repository.get_by_id(game_id)
         game = self._game_from_row(row)
         self._check_revision(game, input.expected_revision)
-        if game.phase is not GamePhase.voting:
+        if game.phase not in (GamePhase.discussion, GamePhase.voting):
             raise GameActionError("The game is not accepting votes")
         player_ids = {player.id for player in game.players}
         if input.voter_id not in player_ids:
             raise GameActionError("Unknown voter")
+        if (
+            game.phase is GamePhase.discussion
+            and input.voter_id not in game.ready_to_vote_player_ids
+        ):
+            raise GameActionError("This player is not ready to vote")
         if input.target_id not in player_ids or input.target_id == input.voter_id:
             raise GameActionError("Vote must target another player")
         if input.voter_id in game.votes:
@@ -349,6 +374,7 @@ class GameService:
             center=center,
             night_roles=self._night_roles(roles),
             night_started_at=None,
+            ready_to_vote_player_ids=[],
         )
 
     @staticmethod

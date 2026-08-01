@@ -76,6 +76,15 @@ class GamesController:
                 self.service.end_discussion(game_id=game_id, input=input)
             )
 
+        @router.post("/{game_id}/vote-readiness", response_model=GameState)
+        async def mark_ready_to_vote(
+            game_id: str,
+            input: AdvanceGameRequest,
+        ) -> GameState:
+            return await self._handle(
+                self.service.mark_ready_to_vote(game_id=game_id, input=input)
+            )
+
         @router.post("/{game_id}/votes", response_model=VoteResponse)
         async def cast_vote(game_id: str, input: VoteRequest) -> VoteResponse:
             return await self._handle(

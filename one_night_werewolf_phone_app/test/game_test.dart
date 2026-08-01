@@ -110,6 +110,7 @@ Map<String, dynamic> _gameJson() => {
   'phase': 'night',
   'night_roles': ['werewolf', 'seer', 'robber', 'troublemaker'],
   'night_started_at': '2026-08-01T00:00:00Z',
+  'ready_to_vote_player_ids': <String>[],
   'revision': 4,
   'players': [
     {

@@ -162,6 +162,7 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
                 Role.insomniac,
             ],
             night_started_at=None,
+            ready_to_vote_player_ids=[],
             votes={"a": "b", "b": "c", "c": "b"},
         )
 
@@ -241,6 +242,47 @@ class GameServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(current.status, "complete")
         self.assertIsNotNone(current.result)
         self.assertEqual(current.result.eliminated_player_ids, ["a"])
+
+    async def test_remote_players_become_ready_and_vote_independently(self):
+        game = await self.service.start_game(self.start_request)
+        stored_state = self.repository.rows[game.id]["state"]
+        stored_state["phase"] = "discussion"
+        game = await self.service.get_game(game.id)
+
+        game = await self.service.mark_ready_to_vote(
+            game.id,
+            AdvanceGameRequest(player_id="a"),
+        )
+        self.assertEqual(game.phase, GamePhase.discussion)
+        self.assertEqual(game.ready_to_vote_player_ids, ["a"])
+
+        response = await self.service.cast_vote(
+            game.id,
+            VoteRequest(voter_id="a", target_id="b"),
+        )
+        game = response.game
+        self.assertEqual(game.votes, {"a": "b"})
+        with self.assertRaisesRegex(ValueError, "not ready"):
+            await self.service.cast_vote(
+                game.id,
+                VoteRequest(voter_id="b", target_id="a"),
+            )
+
+        for player_id in ("b", "c"):
+            game = await self.service.mark_ready_to_vote(
+                game.id,
+                AdvanceGameRequest(player_id=player_id),
+            )
+        self.assertEqual(game.phase, GamePhase.voting)
+
+        for voter_id, target_id in {"b": "a", "c": "a"}.items():
+            response = await self.service.cast_vote(
+                game.id,
+                VoteRequest(voter_id=voter_id, target_id=target_id),
+            )
+            game = response.game
+        self.assertEqual(game.phase, GamePhase.complete)
+        self.assertIsNotNone(game.result)
 
     async def test_room_membership_and_tokens_are_persisted_server_side(self):
         host = await self.service.create_room(CreateRoomRequest(player_name="Host"))

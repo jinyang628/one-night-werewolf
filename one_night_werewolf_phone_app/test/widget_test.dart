@@ -5,37 +5,6 @@ import 'package:one_night_werewolf/l10n.dart';
 import 'package:one_night_werewolf/main.dart';
 
 void main() {
-  test('resets orientation only when a new night handoff begins', () {
-    expect(
-      GameShell.shouldResetNightOrientation(
-        GamePhase.nightAction,
-        GamePhase.nightHandoff,
-      ),
-      isTrue,
-    );
-    expect(
-      GameShell.shouldResetNightOrientation(
-        GamePhase.roleReveal,
-        GamePhase.nightHandoff,
-      ),
-      isTrue,
-    );
-    expect(
-      GameShell.shouldResetNightOrientation(
-        GamePhase.nightHandoff,
-        GamePhase.nightAction,
-      ),
-      isFalse,
-    );
-    expect(
-      GameShell.shouldResetNightOrientation(
-        GamePhase.nightHandoff,
-        GamePhase.nightHandoff,
-      ),
-      isFalse,
-    );
-  });
-
   testWidgets('shows game mode choices on the home page', (tester) async {
     await tester.pumpWidget(const WerewolfApp());
 

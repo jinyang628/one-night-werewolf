@@ -81,13 +81,6 @@ class GameShell extends StatefulWidget {
   final Locale locale;
   final ValueChanged<Locale> onLocaleChanged;
 
-  static bool shouldResetNightOrientation(
-    GamePhase previousPhase,
-    GamePhase currentPhase,
-  ) =>
-      currentPhase == GamePhase.nightHandoff &&
-      previousPhase != GamePhase.nightHandoff;
-
   @override
   State<GameShell> createState() => _GameShellState();
 }
@@ -95,7 +88,7 @@ class GameShell extends StatefulWidget {
 class _GameShellState extends State<GameShell> {
   late final GameController controller;
   int nightQuarterTurns = 0;
-  GamePhase previousPhase = GamePhase.home;
+  int previousNightRoleIndex = 0;
 
   @override
   void initState() {
@@ -113,17 +106,16 @@ class _GameShellState extends State<GameShell> {
   }
 
   void _refresh() {
-    final currentPhase = controller.phase;
+    final currentNightRoleIndex = controller.nightRoleIndex;
     setState(() {
-      if (GameShell.shouldResetNightOrientation(previousPhase, currentPhase)) {
+      if (currentNightRoleIndex != previousNightRoleIndex) {
         nightQuarterTurns = 0;
       }
-      previousPhase = currentPhase;
+      previousNightRoleIndex = currentNightRoleIndex;
     });
   }
 
-  static bool _isNightPhase(GamePhase phase) =>
-      phase == GamePhase.nightHandoff || phase == GamePhase.nightAction;
+  static bool _isNightPhase(GamePhase phase) => phase == GamePhase.nightAction;
 
   static bool shouldShowHomeButton(GamePhase phase) => phase != GamePhase.home;
 
@@ -180,15 +172,6 @@ class _GameShellState extends State<GameShell> {
                     ),
                     GamePhase.roleWaiting => RoleWaitingScreen(
                       controller: controller,
-                    ),
-                    GamePhase.nightHandoff => PrivateHandoff(
-                      key: ValueKey('night-${controller.activeIndex}'),
-                      eyebrow: context.tr('night_action'),
-                      player: controller.activePlayer,
-                      message:
-                          '${context.tr('close_eyes')}\n${context.tr('orientation_hint')}',
-                      buttonLabel: context.tr('start_action'),
-                      onContinue: controller.beginNightAction,
                     ),
                     GamePhase.nightAction => NightActionScreen(
                       key: ValueKey('action-${controller.nightRoleIndex}'),
@@ -1384,8 +1367,6 @@ class DiscussionScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final minutes = controller.secondsRemaining ~/ 60;
-    final seconds = controller.secondsRemaining % 60;
     return ScreenPadding(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1400,15 +1381,7 @@ class DiscussionScreen extends StatelessWidget {
               letterSpacing: 2,
             ),
           ),
-          const SizedBox(height: 14),
-          Text(
-            '$minutes:${seconds.toString().padLeft(2, '0')}',
-            textAlign: TextAlign.center,
-            style: Theme.of(
-              context,
-            ).textTheme.displaySmall?.copyWith(fontSize: 76),
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 24),
           Text(
             context.tr('discussion_instructions'),
             textAlign: TextAlign.center,
@@ -1422,11 +1395,7 @@ class DiscussionScreen extends StatelessWidget {
             onPressed: () async {
               await controller.endDiscussion();
             },
-            child: Text(
-              controller.secondsRemaining == 0
-                  ? context.tr('start_voting')
-                  : context.tr('end_discussion'),
-            ),
+            child: Text(context.tr('ready_to_vote')),
           ),
         ],
       ),
