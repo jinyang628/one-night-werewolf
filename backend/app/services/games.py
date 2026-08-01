@@ -45,7 +45,7 @@ class RoomAuthorizationError(PermissionError):
 
 class GameService:
     NIGHT_ACTION_SECONDS = 10
-    NIGHT_TRANSITION_SECONDS = 2
+    NIGHT_TRANSITION_SECONDS = 1
     NARRATION_LEAD_SECONDS = 3
 
     def __init__(self, repository: GameRepository):
