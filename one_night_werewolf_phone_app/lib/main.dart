@@ -1851,10 +1851,17 @@ class ScreenPadding extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 20),
-    child: child,
-  );
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final isLandscape = size.width > size.height;
+    return Padding(
+      key: const Key('screen-padding'),
+      padding: isLandscape
+          ? const EdgeInsets.symmetric(horizontal: 48, vertical: 16)
+          : const EdgeInsets.symmetric(horizontal: 20),
+      child: child,
+    );
+  }
 }
 
 class SeatBadge extends StatelessWidget {

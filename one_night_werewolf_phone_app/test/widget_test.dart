@@ -114,6 +114,13 @@ void main() {
 
     expect(find.text('Pass to Alex'), findsOneWidget);
     expect(find.text('Start my action'), findsOneWidget);
+    final padding = tester.widget<Padding>(
+      find.byKey(const Key('screen-padding')),
+    );
+    expect(
+      padding.padding,
+      const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+    );
     expect(tester.takeException(), isNull);
   });
 }
